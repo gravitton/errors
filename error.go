@@ -48,10 +48,6 @@ func (e *DataError) Error() string {
 	return e.err.Error()
 }
 
-func (e *DataError) GoString() string {
-	return fmt.Sprintf("%#v %#v", e.err, e.cause)
-}
-
 func (e *DataError) Fields() map[string]any {
 	return e.data
 }
