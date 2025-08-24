@@ -2,6 +2,7 @@ package errors
 
 import (
 	"errors"
+	"fmt"
 	"github.com/gravitton/assert"
 	"reflect"
 	"testing"
@@ -26,6 +27,8 @@ func TestFields(t *testing.T) {
 	err2 := err.WithFields(map[string]any{"type": "warning"})
 	assert.NotSame(t, err1, err2)
 	assert.NotContains(t, err.Fields(), "type")
+	assert.Equal(t, err.Error(), "test3")
+	assert.Equal(t, fmt.Sprintf("%#v", err), "test3")
 	assert.Equal(t, err2.Fields()["type"], "warning")
 
 	err3 := err.WithField("action", "send")

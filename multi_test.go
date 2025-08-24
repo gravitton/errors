@@ -17,7 +17,7 @@ func TestMultiErrors(t *testing.T) {
 	assert.Length(t, errs.Unwrap(), 1)
 	assert.Equal(t, errs.Unwrap(), []error{err1})
 	assert.Equal(t, errs.Error(), "dummy1")
-	assert.Same(t, errs.Unwrap()[0], err1)
+	assert.Same[error](t, errs.Unwrap()[0], err1)
 	assert.ErrorIs(t, errs, err1)
 
 	err2 := New("dummy2")
