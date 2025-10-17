@@ -21,6 +21,23 @@ go get github.com/gravitton/errors
 
 ## Usage
 
+
+```go
+package main
+
+import (
+	"github.com/gravitton/errors"
+)
+
+func Process() error {
+	if err := subProcess(); err != nil {
+		return errors.Wrap(err).WithField("process", "abc").WithCause(err)
+	}
+	
+	return errors.Newf("this should not happen %s", "again")
+}
+```
+
 ```go
 package main
 
@@ -32,13 +49,8 @@ import (
 func Process() error {
 	errs := errors.NewMulti()
 
-	if err := process1(); err != nil {
-		errs.Append(err)
-	}
-
-	if err := process2(); err != nil {
-		errs.Append(err)
-	}
+    errs.Append(process(1))
+    errs.Append(process(2))
 
 	return errs.ErrorOrNil()
 }
