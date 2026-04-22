@@ -49,8 +49,8 @@ import (
 func Process() error {
 	errs := errors.NewMulti()
 
-    errs.Append(process(1))
-    errs.Append(process(2))
+    errs.Add(process(1))
+    errs.Add(process(2))
 
 	return errs.ErrorOrNil()
 }
@@ -65,7 +65,7 @@ func ProcessConcurrent() error {
 			defer wg.Done()
 
 			if err := process(i); err != nil {
-				errs.Append(errors.Wrap(err).WithField("process", i))
+				errs.Add(errors.Wrap(err).WithField("process", i))
 			}
 		}(i)
 	}
