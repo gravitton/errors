@@ -42,8 +42,9 @@ func Process() error {
 package main
 
 import (
-	"github.com/gravitton/errors"
 	"sync"
+
+	"github.com/gravitton/errors"
 )
 
 func Process() error {

@@ -28,28 +28,20 @@ func TestNewf(t *testing.T) {
 	assert.Equal(t, reflect.TypeOf(cause).String(), "*errors.errorString")
 }
 
+func testMethod(err error) error {
+	return Wrap(err)
+}
+
 func TestWrapNil(t *testing.T) {
-	err := Wrap(nil)
+	err1 := Wrap(nil)
 
-	assert.NoError(t, err)
-}
+	assert.NoError(t, err1)
+	assert.True(t, err1 == nil)
 
-func TestWrapNonError(t *testing.T) {
-	err := Wrap("something went wrong")
+	err2 := testMethod(nil)
 
-	assert.Equal(t, err.Error(), "something went wrong")
-
-	cause := err.Unwrap()
-	assert.Equal(t, reflect.TypeOf(cause).String(), "*errors.errorString")
-}
-
-func TestWrapNonErrorNonString(t *testing.T) {
-	err := Wrap(159.5)
-
-	assert.Equal(t, err.Error(), "159.5")
-
-	cause := err.Unwrap()
-	assert.Equal(t, reflect.TypeOf(cause).String(), "*errors.errorString")
+	assert.NoError(t, err2)
+	assert.False(t, err2 == nil) // typed *DataError(nil) nil pointer
 }
 
 func TestWrapError(t *testing.T) {
@@ -58,7 +50,7 @@ func TestWrapError(t *testing.T) {
 
 	assert.Equal(t, err.Error(), "original")
 
-	cause := err.Unwrap()
+	cause := errors.Unwrap(err)
 	assert.Equal(t, cause, original)
 }
 

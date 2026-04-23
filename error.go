@@ -35,27 +35,24 @@ func Newf(format string, v ...any) *DataError {
 	}
 }
 
-// Wrap converts any value into a *DataError and captures the current stack
+// Wrap converts an error into a *DataError and captures the current stack
 // trace. If err is nil, Wrap returns nil. If err is already a *DataError it is
-// returned unchanged. If err implements error it is wrapped directly; otherwise
-// its string representation is used as the error message.
-func Wrap(err any) *DataError {
+// returned unchanged. Otherwise the error is wrapped directly.
+//
+// Warning: the returned *DataError nil is a typed nil pointer. When assigned to
+// or returned as an error interface it will not equal nil. Prefer checking the
+// error before passing it to Wrap rather than checking the result afterwards.
+func Wrap(err error) *DataError {
 	if err == nil {
 		return nil
 	}
 
-	var e error
-	switch t := err.(type) {
-	case *DataError:
-		return t
-	case error:
-		e = t
-	default:
-		e = fmt.Errorf("%v", err)
+	if dataErr, ok := err.(*DataError); ok {
+		return dataErr
 	}
 
 	return &DataError{
-		err:   e,
+		err:   err,
 		stack: callers(1),
 	}
 }

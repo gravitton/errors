@@ -6,7 +6,11 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 
-## [Unreleased](https://github.com/gravitton/errors/compare/v1.1.0...master)
+## [Unreleased](https://github.com/gravitton/errors/compare/v1.1.1...master)
+
+## v1.1.1 (2026-04-23)(https://github.com/gravitton/errors/compare/v1.01.0...v1.1.1)
+### Changed
+- `Wrap` now accepts only `error` instead of `any`
 
 ## v1.1.0 (2026-04-22)(https://github.com/gravitton/errors/compare/v1.0.0...v1.1.0)
 ### Added
