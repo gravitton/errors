@@ -8,9 +8,11 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased](https://github.com/gravitton/errors/compare/v1.1.1...master)
 
+
 ## v1.1.1 (2026-04-23)(https://github.com/gravitton/errors/compare/v1.01.0...v1.1.1)
 ### Changed
 - `Wrap` now accepts only `error` instead of `any`
+
 
 ## v1.1.0 (2026-04-22)(https://github.com/gravitton/errors/compare/v1.0.0...v1.1.0)
 ### Added
@@ -21,6 +23,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - `MultiError` mutex upgraded to `sync.RWMutex` for improved read concurrency
 - `MultiError.ErrorOrNil` and `Unwrap` now handle nil receiver safely
 - `MultiError.Error` and `GoString` are now concurrency-safe
+
 
 ## v1.0.0 (2025-10-17)
 ### Added
