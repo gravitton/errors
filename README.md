@@ -23,8 +23,6 @@ go get github.com/gravitton/errors
 
 
 ```go
-package main
-
 import (
 	"github.com/gravitton/errors"
 )
@@ -39,8 +37,6 @@ func Process() error {
 ```
 
 ```go
-package main
-
 import (
 	"sync"
 
