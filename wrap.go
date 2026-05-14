@@ -18,3 +18,8 @@ func Is(err, target error) bool {
 func As(err error, target any) bool {
 	return errors.As(err, target)
 }
+
+// AsType delegates to errors.AsType.
+func AsType[E error](err error) (E, bool) {
+	return errors.AsType[E](err)
+}

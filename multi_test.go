@@ -83,6 +83,46 @@ func TestMultiErrorErrorIs(t *testing.T) {
 	assert.ErrorIs(t, errs, err2)
 }
 
+func TestJoinNone(t *testing.T) {
+	err := Join()
+
+	assert.NoError(t, err)
+}
+
+func TestJoinAllNil(t *testing.T) {
+	err := Join(nil, nil)
+
+	assert.NoError(t, err)
+}
+
+func TestJoinSingle(t *testing.T) {
+	err1 := errors.New("foo")
+	err := Join(err1)
+
+	assert.Error(t, err)
+	assert.Equal(t, err.Error(), "foo")
+	assert.ErrorIs(t, err, err1)
+}
+
+func TestJoinMultiple(t *testing.T) {
+	err1 := errors.New("foo")
+	err2 := errors.New("bar")
+	err := Join(err1, err2)
+
+	assert.Error(t, err)
+	assert.Equal(t, err.Error(), "2 errors occurred:\n foo\n bar")
+	assert.ErrorIs(t, err, err1)
+	assert.ErrorIs(t, err, err2)
+}
+
+func TestJoinSkipsNils(t *testing.T) {
+	err1 := errors.New("foo")
+	err := Join(nil, err1, nil)
+
+	assert.Error(t, err)
+	assert.Equal(t, err.Error(), "foo")
+}
+
 func TestMultiErrorsConcurrentSafe(t *testing.T) {
 	errs := NewMulti()
 

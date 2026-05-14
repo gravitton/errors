@@ -18,9 +18,16 @@
 go get github.com/gravitton/errors
 ```
 
+## Drop-in replacement
+
+This package is a drop-in replacement for the standard library `errors` package. It re-exports `New`, `Unwrap`, `Is`, `As`, `AsType`, and `Join` unchanged, so you can swap the import and gain `DataError`, `MultiError` without changing any existing call sites.
+
+```diff
+- "errors"
++ "github.com/gravitton/errors"
+```
 
 ## Usage
-
 
 ```go
 import (

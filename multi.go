@@ -20,6 +20,17 @@ func NewMulti() *MultiError {
 	return &MultiError{}
 }
 
+// Join returns a MultiError containing the given errors, skipping any nils.
+// Returns nil if all arguments are nil.
+func Join(errs ...error) error {
+	m := &MultiError{}
+	for _, err := range errs {
+		m.Add(err)
+	}
+
+	return m.ErrorOrNil()
+}
+
 // Error returns the combined error message. An empty MultiError returns an
 // empty string. A single-error MultiError returns that error's message
 // unchanged. Otherwise a numbered summary is returned.
