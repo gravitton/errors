@@ -130,6 +130,10 @@ func (e *DataError) WithCause(err error) *DataError {
 // Unwrap returns the cause if one was set via WithCause; otherwise it returns
 // the underlying error created by New, Newf, or Wrap.
 func (e *DataError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+
 	if e.cause != nil {
 		return e.cause
 	}
