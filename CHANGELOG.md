@@ -6,7 +6,12 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 
-## [Unreleased](https://github.com/gravitton/errors/compare/v1.2.0...master)
+## [Unreleased](https://github.com/gravitton/errors/compare/v1.2.1...master)
+
+
+## v1.2.1 (2026-05-21)(https://github.com/gravitton/errors/compare/v1.2.0...v1.2.1)
+### Fixed
+- `DataError.Unwrap` now handles nil receiver safely, preventing a panic when a typed-nil `*DataError` is passed to `errors.Unwrap`, `errors.Is`, or `errors.As`
 
 
 ## v1.2.0 (2026-05-14)(https://github.com/gravitton/errors/compare/v1.1.1...v1.2.0)
