@@ -44,25 +44,6 @@ func Process() error {
 }
 ```
 
-Print the message alone with `%v`, or the fields, the cause and the stack trace with `%+v`:
-
-```go
-fmt.Printf("%+v", err)
-// process failed
-//	process=abc
-// caused by: connection refused
-//	main.Process
-//		/app/main.go:14
-```
-
-Walk the captured stack yourself with `Frames`:
-
-```go
-for frame := range err.Frames() {
-	fmt.Println(frame.Function, frame.File, frame.Line)
-}
-```
-
 ```go
 import (
 	"sync"
@@ -93,6 +74,25 @@ func ProcessConcurrent() error {
 	wg.Wait()
 
 	return errs.ErrorOrNil()
+}
+```
+
+Print the message alone with `%v`, or the fields, the cause and the stack trace with `%+v`:
+
+```go
+fmt.Printf("%+v", err)
+// process failed
+//	process=abc
+// caused by: connection refused
+//	main.Process
+//		/app/main.go:14
+```
+
+Walk the captured stack yourself with `Frames`:
+
+```go
+for frame := range err.Frames() {
+	fmt.Println(frame.Function, frame.File, frame.Line)
 }
 ```
 
