@@ -2,7 +2,9 @@ package errors
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/gravitton/assert"
@@ -19,9 +21,9 @@ func TestNew(t *testing.T) {
 }
 
 func TestNewf(t *testing.T) {
-	err := Newf("Test DataError #%d: %s", 5, "failed to spawn")
+	err := Newf("Test Error #%d: %s", 5, "failed to spawn")
 
-	assert.Equal(t, err.Error(), "Test DataError #5: failed to spawn")
+	assert.Equal(t, err.Error(), "Test Error #5: failed to spawn")
 	assert.Empty(t, err.Fields())
 
 	cause := err.Unwrap()
@@ -41,10 +43,10 @@ func TestWrapNil(t *testing.T) {
 	err2 := testMethod(nil)
 
 	assert.NoError(t, err2)
-	assert.False(t, err2 == nil) // typed *DataError(nil) nil pointer
+	assert.False(t, err2 == nil) // typed *Error(nil) nil pointer
 }
 
-func TestWrapError(t *testing.T) {
+func TestWrapStdError(t *testing.T) {
 	original := errors.New("original")
 	err := Wrap(original)
 
@@ -54,7 +56,7 @@ func TestWrapError(t *testing.T) {
 	assert.Equal(t, cause, original)
 }
 
-func TestWrapDataError(t *testing.T) {
+func TestWrapError(t *testing.T) {
 	original := New("original")
 	err := Wrap(original)
 
@@ -95,10 +97,79 @@ func TestFields(t *testing.T) {
 	assert.Equal(t, err4.Fields(), map[string]any{"action": "call", "type": "error", "debug": true, "line": 15})
 }
 
-func TestWithFieldsDropsFunctions(t *testing.T) {
-	err := New("test").WithFields(map[string]any{"key": "value", "func": func() {}})
+func TestFieldsAreCopied(t *testing.T) {
+	err := New("test").WithField("action", "call")
 
-	assert.Equal(t, err.Fields(), map[string]any{"key": "value"})
+	fields := err.Fields()
+	fields["action"] = "changed"
+
+	assert.Equal(t, err.Fields(), map[string]any{"action": "call"})
+}
+
+func TestFieldsUncomparableValues(t *testing.T) {
+	err1 := New("test").WithField("tags", []string{"a", "b"})
+	err2 := New("test").WithField("tags", []string{"a", "b"})
+	err3 := New("test").WithField("tags", []string{"a", "c"})
+	err4 := New("test").WithField("tags", "a")
+
+	assert.ErrorIs(t, err1, err2)
+	assert.NotErrorIs(t, err1, err3)
+	assert.NotErrorIs(t, err1, err4)
+}
+
+func TestFieldsFunctionValues(t *testing.T) {
+	callback := func() {}
+
+	err1 := New("test").WithFields(map[string]any{"key": "value", "callback": callback})
+	err2 := New("test").WithField("callback", callback)
+
+	assert.Length(t, err1.Fields(), 2)
+	assert.False(t, err1.Is(err2)) // function values never compare equal
+}
+
+func TestNilReceiver(t *testing.T) {
+	var err *Error
+
+	assert.Equal(t, err.Error(), "<nil>")
+	assert.Empty(t, err.Fields())
+	assert.Empty(t, err.StackTrace())
+	assert.Empty(t, slices.Collect(err.Frames()))
+	assert.NoError(t, err.WithField("action", "call"))
+	assert.NoError(t, err.WithFields(map[string]any{"action": "call"}))
+	assert.NoError(t, err.WithCause(New("cause")))
+	assert.NoError(t, err.Unwrap())
+	assert.False(t, err.Is(New("test")))
+	assert.NotErrorIs(t, New("test"), err)
+}
+
+func TestFrames(t *testing.T) {
+	frames := slices.Collect(New("test").Frames())
+
+	assert.NotEmpty(t, frames)
+	assert.Equal(t, frames[0].Function, "github.com/gravitton/errors.TestFrames")
+}
+
+func TestFormat(t *testing.T) {
+	err := New("test").WithField("action", "call").WithCause(errors.New("original"))
+
+	assert.Equal(t, fmt.Sprintf("%s", err), "test")
+	assert.Equal(t, fmt.Sprintf("%v", err), "test")
+	assert.Equal(t, fmt.Sprintf("%q", err), `"test"`)
+
+	details := fmt.Sprintf("%+v", err)
+
+	assert.Contains(t, details, "test")
+	assert.Contains(t, details, "action=call")
+	assert.Contains(t, details, "caused by: original")
+	assert.Contains(t, details, "github.com/gravitton/errors.TestFormat")
+	assert.Equal(t, fmt.Sprintf("%d", err), "%!d(*errors.Error=test)")
+}
+
+func TestFormatNil(t *testing.T) {
+	var err *Error
+
+	assert.Equal(t, fmt.Sprintf("%v", err), "<nil>")
+	assert.Equal(t, fmt.Sprintf("%+v", err), "<nil>")
 }
 
 func TestWithCause(t *testing.T) {
@@ -130,7 +201,7 @@ func TestErrorsIs(t *testing.T) {
 	assert.ErrorIs(t, err4, original)
 }
 
-func TestErrorsIsDataError(t *testing.T) {
+func TestErrorsIsError(t *testing.T) {
 	err1 := New("test")
 	err2 := New("test2")
 	err3 := New("test").WithFields(map[string]any{"action": "call", "type": "error"})

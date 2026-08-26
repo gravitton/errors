@@ -2,6 +2,7 @@ package errors
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -24,20 +25,33 @@ func NewMulti() *MultiError {
 // Returns nil if all arguments are nil.
 func Join(errs ...error) error {
 	m := &MultiError{}
-	for _, err := range errs {
-		m.Add(err)
-	}
+	m.Add(errs...)
 
 	return m.ErrorOrNil()
+}
+
+// Add adds the given errors to the collection. Nil errors are silently
+// ignored. It is safe to call Add concurrently with other Add calls.
+func (e *MultiError) Add(errs ...error) {
+	if len(errs) == 0 {
+		return
+	}
+
+	e.mutex.Lock()
+	defer e.mutex.Unlock()
+
+	for _, err := range errs {
+		if err != nil {
+			e.errs = append(e.errs, err)
+		}
+	}
 }
 
 // Error returns the combined error message. An empty MultiError returns an
 // empty string. A single-error MultiError returns that error's message
 // unchanged. Otherwise a numbered summary is returned.
 func (e *MultiError) Error() string {
-	e.mutex.RLock()
-	errs := e.errs
-	e.mutex.RUnlock()
+	errs := e.Unwrap()
 
 	switch len(errs) {
 	case 0:
@@ -49,21 +63,14 @@ func (e *MultiError) Error() string {
 		for i, err := range errs {
 			msg[i] = err.Error()
 		}
+
 		return fmt.Sprintf("%d errors occurred:\n %s", len(errs), strings.Join(msg, "\n "))
 	}
 }
 
-// GoString implements fmt.GoStringer for debugging output.
-func (e *MultiError) GoString() string {
-	e.mutex.RLock()
-	errs := e.errs
-	e.mutex.RUnlock()
-
-	return fmt.Sprintf("%#v", errs)
-}
-
-// Unwrap returns the slice of collected errors, satisfying the Go 1.20+
-// multi-error unwrap interface. It returns nil for a nil receiver.
+// Unwrap returns the collected errors, satisfying the Go 1.20+ multi-error
+// unwrap interface. It returns nil for a nil receiver. The caller must not
+// modify the returned slice.
 func (e *MultiError) Unwrap() []error {
 	if e == nil {
 		return nil
@@ -75,34 +82,36 @@ func (e *MultiError) Unwrap() []error {
 	return e.errs
 }
 
-// Add adds err to the collection. Nil errors are silently ignored. It is
-// safe to call Add concurrently with other Add calls.
-func (e *MultiError) Add(err error) {
-	if err == nil {
-		return
+// Errors returns a copy of the collected errors. Unlike [MultiError.Unwrap],
+// the result is safe to modify.
+func (e *MultiError) Errors() []error {
+	return slices.Clone(e.Unwrap())
+}
+
+// Len returns the number of collected errors. A nil receiver reports zero.
+func (e *MultiError) Len() int {
+	if e == nil {
+		return 0
 	}
 
-	e.mutex.Lock()
-	defer e.mutex.Unlock()
+	e.mutex.RLock()
+	defer e.mutex.RUnlock()
 
-	e.errs = append(e.errs, err)
+	return len(e.errs)
 }
 
 // ErrorOrNil returns nil if no errors have been collected, or e itself
 // otherwise. A nil receiver is treated as an empty collection and also returns
 // nil.
 func (e *MultiError) ErrorOrNil() error {
-	if e == nil {
-		return nil
-	}
-
-	e.mutex.RLock()
-	n := len(e.errs)
-	e.mutex.RUnlock()
-
-	if n == 0 {
+	if e == nil || e.Len() == 0 {
 		return nil
 	}
 
 	return e
+}
+
+// GoString implements fmt.GoStringer for debugging output.
+func (e *MultiError) GoString() string {
+	return fmt.Sprintf("%#v", e.Unwrap())
 }

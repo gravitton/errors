@@ -19,7 +19,9 @@ go get github.com/gravitton/errors
 
 ## Drop-in replacement
 
-This package is a drop-in replacement for the standard library `errors` package. It re-exports `New`, `Unwrap`, `Is`, `As`, `AsType`, and `Join` unchanged, so you can swap the import and gain `DataError`, `MultiError` without changing any existing call sites.
+This package is a drop-in replacement for the standard library `errors` package. It re-exports `Unwrap`, `Is`, `As`, and `AsType` unchanged, so you can swap the import and gain `Error` and `MultiError` without changing any existing call sites. 
+
+`New` returns an `*Error` instead of an `error`, and `Join` returns a `*MultiError`.
 
 ```diff
 - "errors"
@@ -35,10 +37,29 @@ import (
 
 func Process() error {
 	if err := subProcess(); err != nil {
-		return errors.Wrap(err).WithField("process", "abc").WithCause(err)
+		return errors.Wrap(err).WithField("process", "abc")
 	}
-	
+
 	return errors.Newf("this should not happen %s", "again")
+}
+```
+
+Print the message alone with `%v`, or the fields, the cause and the stack trace with `%+v`:
+
+```go
+fmt.Printf("%+v", err)
+// process failed
+//	process=abc
+// caused by: connection refused
+//	main.Process
+//		/app/main.go:14
+```
+
+Walk the captured stack yourself with `Frames`:
+
+```go
+for frame := range err.Frames() {
+	fmt.Println(frame.Function, frame.File, frame.Line)
 }
 ```
 
@@ -52,8 +73,7 @@ import (
 func Process() error {
 	errs := errors.NewMulti()
 
-    errs.Add(process(1))
-    errs.Add(process(2))
+	errs.Add(process(1), process(2))
 
 	return errs.ErrorOrNil()
 }
@@ -62,15 +82,12 @@ func ProcessConcurrent() error {
 	errs := errors.NewMulti()
 	wg := sync.WaitGroup{}
 
-	for i := 0; i < 10; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-
+	for i := range 10 {
+		wg.Go(func() {
 			if err := process(i); err != nil {
 				errs.Add(errors.Wrap(err).WithField("process", i))
 			}
-		}(i)
+		})
 	}
 
 	wg.Wait()

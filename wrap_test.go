@@ -16,7 +16,7 @@ func TestWrapUnwrap(t *testing.T) {
 	assert.Equal(t, Unwrap(inner), nil)
 	assert.Equal(t, Unwrap(nil), nil)
 
-	var err *DataError
+	var err *Error
 	assert.Equal(t, Unwrap(err), nil)
 
 	var errs *MultiError
@@ -31,7 +31,7 @@ func TestWrapIs(t *testing.T) {
 	assert.False(t, Is(outer, errors.New("other")))
 	assert.False(t, Is(nil, inner))
 
-	var err *DataError
+	var err *Error
 	assert.False(t, Is(err, inner))
 
 	var errs *MultiError
@@ -42,13 +42,13 @@ func TestWrapAs(t *testing.T) {
 	original := New("test").WithField("k", "v")
 	wrapped := fmt.Errorf("wrapped: %w", original)
 
-	var target *DataError
+	var target *Error
 	assert.True(t, As(wrapped, &target))
 	assert.Equal(t, target, original)
 
 	assert.False(t, As(nil, &target))
 
-	var nilErr *DataError
+	var nilErr *Error
 	assert.True(t, As(nilErr, &target))
 	assert.Equal(t, target, nilErr)
 
@@ -62,15 +62,15 @@ func TestWrapAsType(t *testing.T) {
 	original := New("test").WithField("k", "v")
 	wrapped := fmt.Errorf("wrapped: %w", original)
 
-	target, ok := AsType[*DataError](wrapped)
+	target, ok := AsType[*Error](wrapped)
 	assert.True(t, ok)
 	assert.Equal(t, target, original)
 
-	_, ok = AsType[*DataError](nil)
+	_, ok = AsType[*Error](nil)
 	assert.False(t, ok)
 
-	var nilErr *DataError
-	nilTarget, ok := AsType[*DataError](nilErr)
+	var nilErr *Error
+	nilTarget, ok := AsType[*Error](nilErr)
 	assert.True(t, ok)
 	assert.Equal(t, nilTarget, nilErr)
 }

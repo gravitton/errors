@@ -6,7 +6,26 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 
-## [Unreleased](https://github.com/gravitton/errors/compare/v1.2.1...master)
+## [Unreleased](https://github.com/gravitton/errors/compare/v1.3.0...master)
+
+
+## v1.3.0 (2026-08-26)(https://github.com/gravitton/errors/compare/v1.2.1...v1.3.0)
+### Added
+- `Error.Format` implements `fmt.Formatter`: `%+v` prints fields, cause and stack trace
+- `Error.Frames` iterator resolving the captured stack trace into `runtime.Frame` values
+- `MultiError.Len` and `MultiError.Errors` accessors
+- `MultiError.Add` accepts a variadic list of errors
+
+### Changed
+- Require Go 1.27
+- `DataError` renamed to `Error` (**breaking**)
+- `Error.Fields` returns a copy, so the returned map can no longer mutate the error
+- `Error.WithFields` no longer drops function values
+- `Error.WithField`, `WithFields` and `WithCause` return nil for a nil receiver instead of panicking
+
+### Fixed
+- `Error.Is` no longer panics when a field holds an uncomparable value such as a slice or a map
+- `Error.Error`, `Fields`, `StackTrace` and `Is` now handle a nil receiver safely
 
 
 ## v1.2.1 (2026-05-21)(https://github.com/gravitton/errors/compare/v1.2.0...v1.2.1)
