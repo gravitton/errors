@@ -101,10 +101,12 @@ func TestFieldsAreCopied(t *testing.T) {
 }
 
 func TestFieldsUncomparableValues(t *testing.T) {
-	err1 := New("test").WithField("tags", []string{"a", "b"})
-	err2 := New("test").WithField("tags", []string{"a", "b"})
-	err3 := New("test").WithField("tags", []string{"a", "c"})
-	err4 := New("test").WithField("tags", "a")
+	base := New("test")
+
+	err1 := base.WithField("tags", []string{"a", "b"})
+	err2 := base.WithField("tags", []string{"a", "b"})
+	err3 := base.WithField("tags", []string{"a", "c"})
+	err4 := base.WithField("tags", "a")
 
 	assert.ErrorIs(t, err1, err2)
 	assert.NotErrorIs(t, err1, err3)
@@ -116,22 +118,33 @@ type container struct {
 }
 
 func TestFieldsUncomparableDynamicValues(t *testing.T) {
-	err1 := New("test").WithField("box", container{value: []int{1}})
-	err2 := New("test").WithField("box", container{value: []int{1}})
-	err3 := New("test").WithField("box", container{value: []int{2}})
-	err4 := New("test").WithField("box", container{value: 1})
+	base := New("test")
+
+	err1 := base.WithField("box", container{value: []int{1}})
+	err2 := base.WithField("box", container{value: []int{1}})
+	err3 := base.WithField("box", container{value: []int{2}})
+	err4 := base.WithField("box", container{value: 1})
 
 	assert.ErrorIs(t, err1, err2)
 	assert.NotErrorIs(t, err1, err3)
 	assert.NotErrorIs(t, err1, err4)
-	assert.ErrorIs(t, err4, New("test").WithField("box", container{value: 1}))
+	assert.ErrorIs(t, err4, base.WithField("box", container{value: 1}))
+}
+
+func TestFieldsNilValues(t *testing.T) {
+	base := New("test")
+
+	assert.ErrorIs(t, base.WithField("k", nil), base.WithField("k", nil))
+	assert.NotErrorIs(t, base.WithField("k", nil), base.WithField("k", 1))
+	assert.NotErrorIs(t, base.WithField("k", 1), base.WithField("k", nil))
 }
 
 func TestFieldsFunctionValues(t *testing.T) {
+	base := New("test")
 	callback := func() {}
 
-	err1 := New("test").WithFields(map[string]any{"key": "value", "callback": callback})
-	err2 := New("test").WithField("callback", callback)
+	err1 := base.WithFields(map[string]any{"key": "value", "callback": callback})
+	err2 := base.WithField("callback", callback)
 
 	assert.Length(t, err1.Fields(), 2)
 	assert.False(t, err1.Is(err2)) // function values never compare equal
@@ -159,6 +172,17 @@ func TestFrames(t *testing.T) {
 	assert.Equal(t, frames[0].Function, "github.com/gravitton/errors.TestFrames")
 }
 
+func TestFramesBreak(t *testing.T) {
+	count := 0
+	for range New("test").Frames() {
+		count++
+
+		break
+	}
+
+	assert.Equal(t, count, 1)
+}
+
 func TestFormat(t *testing.T) {
 	err := New("test").WithField("action", "call").WithCause(errors.New("original"))
 
@@ -172,7 +196,27 @@ func TestFormat(t *testing.T) {
 	assert.Contains(t, details, "action=call")
 	assert.Contains(t, details, "caused by: original")
 	assert.Contains(t, details, "github.com/gravitton/errors.TestFormat")
-	assert.Equal(t, fmt.Sprintf("%d", err), "%!d(*errors.Error=test)")
+	assert.Equal(t, fmt.Sprintf("%d", err), "%!d(string=test)")
+}
+
+func TestFormatFlags(t *testing.T) {
+	err := New("hello")
+
+	assert.Equal(t, fmt.Sprintf("[%10s]", err), "[     hello]")
+	assert.Equal(t, fmt.Sprintf("[%-10v]", err), "[hello     ]")
+	assert.Equal(t, fmt.Sprintf("[%.2s]", err), "[he]")
+	assert.Equal(t, fmt.Sprintf("%x", err), "68656c6c6f")
+	assert.Equal(t, fmt.Sprintf("%#q", err), "`hello`")
+}
+
+func TestFormatGoSyntax(t *testing.T) {
+	err := New("test").WithField("action", "call").WithCause(io.EOF)
+
+	assert.Equal(t, fmt.Sprintf("%#v", err), `&errors.Error{err:&errors.errorString{s:"test"}, data:map[string]interface {}{"action":"call"}, cause:&errors.errorString{s:"EOF"}}`)
+
+	var nilErr *Error
+
+	assert.Equal(t, fmt.Sprintf("%#v", nilErr), "(*errors.Error)(nil)")
 }
 
 func TestFormatNil(t *testing.T) {
@@ -212,6 +256,8 @@ func TestErrorsIs(t *testing.T) {
 	err1 := New("original error")
 
 	assert.NotErrorIs(t, err1, original)
+	assert.NotErrorIs(t, err1, New("original error"))
+	assert.ErrorIs(t, Wrap(original), Wrap(original))
 
 	err2 := Wrap(original)
 
@@ -229,8 +275,8 @@ func TestErrorsIs(t *testing.T) {
 func TestErrorsIsError(t *testing.T) {
 	err1 := New("test")
 	err2 := New("test2")
-	err3 := New("test").WithFields(map[string]any{"action": "call", "type": "error"})
-	err4 := New("test").WithFields(map[string]any{"type": "warn"})
+	err3 := err1.WithFields(map[string]any{"action": "call", "type": "error"})
+	err4 := err1.WithFields(map[string]any{"type": "warn"})
 
 	assert.NotErrorIs(t, err1, err2) // different error
 	assert.NotErrorIs(t, err1, err3) // additional fields
@@ -247,4 +293,13 @@ func TestErrorsIsError(t *testing.T) {
 	assert.ErrorIs(t, err4, err1)    // missing fields
 	assert.NotErrorIs(t, err4, err2) // different error
 	assert.NotErrorIs(t, err4, err3) // different fields
+}
+
+func TestErrorsIsInspectsOnlyTarget(t *testing.T) {
+	sentinel := New("sentinel")
+
+	assert.NotErrorIs(t, sentinel, fmt.Errorf("wrapped: %w", sentinel))
+	assert.NotErrorIs(t, sentinel, Join(errors.New("other"), sentinel))
+	assert.NotErrorIs(t, sentinel, New("other").WithCause(sentinel))
+	assert.ErrorIs(t, New("other").WithCause(sentinel), sentinel)
 }

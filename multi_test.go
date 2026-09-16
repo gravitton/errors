@@ -137,6 +137,20 @@ func TestMultiErrorErrorsAreCopied(t *testing.T) {
 	clone[0] = errors.New("bar")
 
 	assert.Equal(t, errs.Unwrap(), []error{err1})
+
+	unwrapped := errs.Unwrap()
+	unwrapped[0] = errors.New("baz")
+
+	assert.Equal(t, errs.Errors(), []error{err1})
+}
+
+func TestJoinAs(t *testing.T) {
+	err := Join(errors.New("foo"), errors.New("bar"))
+
+	errs, ok := AsType[*MultiError](err)
+
+	assert.True(t, ok)
+	assert.Equal(t, errs.Len(), 2)
 }
 
 func TestMultiErrorsConcurrentSafe(t *testing.T) {
@@ -158,4 +172,30 @@ func TestMultiErrorsConcurrentSafe(t *testing.T) {
 	wg.Wait()
 
 	assert.Equal(t, errs.Len(), iM*jM)
+}
+
+func TestMultiErrorsConcurrentRead(t *testing.T) {
+	errs := NewMulti()
+
+	wg := sync.WaitGroup{}
+
+	for i := range 10 {
+		wg.Go(func() {
+			for j := range 100 {
+				errs.Add(Newf("err-%d-%d", i, j))
+			}
+		})
+
+		wg.Go(func() {
+			for range 100 {
+				_ = errs.Error()
+				_ = errs.GoString()
+				_ = errs.ErrorOrNil()
+			}
+		})
+	}
+
+	wg.Wait()
+
+	assert.Equal(t, errs.Len(), 1000)
 }

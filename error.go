@@ -137,21 +137,23 @@ func (e *Error) Unwrap() []error {
 	return errs
 }
 
-// Is reports whether e matches target. Two *Error values are considered equal
-// when their messages match and every field present in target also appears in
-// e with the same value. This allows errors.Is to find a sentinel Error
-// anywhere in a chain, optionally scoped by fields.
+// Is reports whether e matches target. Two *Error values match when they share
+// the same underlying error and every field present in target also appears in
+// e with the same value. WithField, WithFields and WithCause keep the underlying
+// error, so errors.Is finds a sentinel Error anywhere in a chain, optionally
+// scoped by fields. Only target itself is inspected; errors wrapped by target
+// are not.
 //
 // Field values of different types never match. Uncomparable values, including
 // comparable types holding an uncomparable dynamic value, are compared with
 // reflect.DeepEqual, so function fields only match when both are nil.
 func (e *Error) Is(target error) bool {
-	var err *Error
-	if e == nil || !errors.As(target, &err) || err == nil {
+	err, ok := target.(*Error)
+	if !ok || e == nil || err == nil {
 		return false
 	}
 
-	if e.Error() != err.Error() {
+	if e.err != err.err {
 		return false
 	}
 
@@ -164,26 +166,28 @@ func (e *Error) Is(target error) bool {
 	return true
 }
 
-// Format implements fmt.Formatter. The %s, %q and %v verbs print the message
-// alone; %+v additionally prints the fields, the cause chain and the stack
-// trace.
+// Format implements fmt.Formatter. The message is printed like a plain string,
+// so %s, %q, %x and %v honour width, precision and flags. %+v additionally
+// prints the fields, the cause chain and the stack trace, and %#v prints the
+// error in Go syntax.
 func (e *Error) Format(s fmt.State, verb rune) {
-	switch verb {
-	case 'v':
-		if s.Flag('+') {
-			io.WriteString(s, e.details())
-
-			return
-		}
-
-		io.WriteString(s, e.Error())
-	case 's':
-		io.WriteString(s, e.Error())
-	case 'q':
-		fmt.Fprintf(s, "%q", e.Error())
+	switch {
+	case verb == 'v' && s.Flag('+'):
+		io.WriteString(s, e.details())
+	case verb == 'v' && s.Flag('#'):
+		io.WriteString(s, e.GoString())
 	default:
-		fmt.Fprintf(s, "%%!%c(*errors.Error=%s)", verb, e.Error())
+		fmt.Fprintf(s, fmt.FormatString(s, verb), e.Error())
 	}
+}
+
+// GoString implements fmt.GoStringer for debugging output.
+func (e *Error) GoString() string {
+	if e == nil {
+		return "(*errors.Error)(nil)"
+	}
+
+	return fmt.Sprintf("&errors.Error{err:%#v, data:%#v, cause:%#v}", e.err, e.data, e.cause)
 }
 
 // StackTrace returns the program counters captured when the error was created.
@@ -251,11 +255,16 @@ func callers(skip int) []uintptr {
 // equal compares two field values without panicking on uncomparable types,
 // including comparable types that hold an uncomparable dynamic value.
 func equal(a, b any) bool {
-	if reflect.TypeOf(a) != reflect.TypeOf(b) {
+	if a == nil || b == nil {
+		return a == b
+	}
+
+	va, vb := reflect.ValueOf(a), reflect.ValueOf(b)
+	if va.Type() != vb.Type() {
 		return false
 	}
 
-	if a == nil || (reflect.ValueOf(a).Comparable() && reflect.ValueOf(b).Comparable()) {
+	if va.Comparable() && vb.Comparable() {
 		return a == b
 	}
 

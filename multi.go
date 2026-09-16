@@ -68,9 +68,9 @@ func (e *MultiError) Error() string {
 	}
 }
 
-// Unwrap returns the collected errors, satisfying the Go 1.20+ multi-error
-// unwrap interface. It returns nil for a nil receiver. The caller must not
-// modify the returned slice.
+// Unwrap returns a copy of the collected errors, satisfying the Go 1.20+
+// multi-error unwrap interface. It returns nil for a nil receiver or an empty
+// collection. The result is safe to modify.
 func (e *MultiError) Unwrap() []error {
 	if e == nil {
 		return nil
@@ -79,13 +79,13 @@ func (e *MultiError) Unwrap() []error {
 	e.mutex.RLock()
 	defer e.mutex.RUnlock()
 
-	return e.errs
+	return slices.Clone(e.errs)
 }
 
-// Errors returns a copy of the collected errors. Unlike [MultiError.Unwrap],
-// the result is safe to modify.
+// Errors returns a copy of the collected errors. It is an alias of
+// [MultiError.Unwrap] kept for readability at call sites.
 func (e *MultiError) Errors() []error {
-	return slices.Clone(e.Unwrap())
+	return e.Unwrap()
 }
 
 // Len returns the number of collected errors. A nil receiver reports zero.

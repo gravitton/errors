@@ -4,6 +4,10 @@ import (
 	"errors"
 )
 
+// ErrUnsupported is re-exported from the standard library so that callers can
+// swap the import without losing it.
+var ErrUnsupported = errors.ErrUnsupported
+
 // Unwrap delegates to errors.Unwrap.
 func Unwrap(err error) error {
 	return errors.Unwrap(err)

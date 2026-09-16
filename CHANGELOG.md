@@ -6,9 +6,17 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 
-## [Unreleased](https://github.com/gravitton/errors/compare/v1.3.0...master)
+## [Unreleased](https://github.com/gravitton/errors/compare/v1.3.0...main)
+### Added
+- `ErrUnsupported` re-exported from the standard library
+- `Error.GoString` and `%#v` print the error in Go syntax
+
 ### Changed
 - `Error.Unwrap` returns `[]error` holding both the wrapped error and the cause, so `errors.Unwrap` now returns nil for an `*Error` (**breaking**)
+- `Error.Is` matches on the underlying error identity instead of the message text, so two independent `New` calls with the same text no longer match (**breaking**)
+- `Error.Is` inspects only the target itself, no longer errors wrapped by the target (**breaking**)
+- `Error.Format` honours width, precision and flags for `%s`, `%q`, `%v` and `%x`
+- `MultiError.Unwrap` returns a copy of the collected errors
 
 ### Fixed
 - `Error.WithCause` no longer hides the wrapped error from `errors.Is` and `errors.As`

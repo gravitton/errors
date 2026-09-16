@@ -74,3 +74,7 @@ func TestWrapAsType(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, nilTarget, nilErr)
 }
+
+func TestErrUnsupported(t *testing.T) {
+	assert.Same(t, ErrUnsupported, errors.ErrUnsupported)
+}
