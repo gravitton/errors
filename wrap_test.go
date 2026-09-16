@@ -16,7 +16,7 @@ func TestWrapUnwrap(t *testing.T) {
 	assert.Equal(t, Unwrap(inner), nil)
 	assert.Equal(t, Unwrap(nil), nil)
 
-	var err *Error
+	err := New("outer").WithCause(inner)
 	assert.Equal(t, Unwrap(err), nil)
 
 	var errs *MultiError

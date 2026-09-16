@@ -21,7 +21,7 @@ go get github.com/gravitton/errors
 
 This package is a drop-in replacement for the standard library `errors` package. It re-exports `Unwrap`, `Is`, `As`, and `AsType` unchanged, so you can swap the import and gain `Error` and `MultiError` without changing any existing call sites. 
 
-`New` returns an `*Error` instead of an `error`, and `Join` returns a `*MultiError`.
+`New` returns an `*Error` instead of an `error`. `Error` and `MultiError` both implement `Unwrap() []error`, so `errors.Unwrap` returns nil for them; use `Is` and `As` to inspect the chain.
 
 ```diff
 - "errors"

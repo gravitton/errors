@@ -3,7 +3,7 @@ package errors
 import (
 	"errors"
 	"fmt"
-	"reflect"
+	"io"
 	"slices"
 	"testing"
 
@@ -15,9 +15,7 @@ func TestNew(t *testing.T) {
 
 	assert.Equal(t, err.Error(), "test")
 	assert.Empty(t, err.Fields())
-
-	cause := err.Unwrap()
-	assert.Equal(t, reflect.TypeOf(cause).String(), "*errors.errorString")
+	assert.Length(t, err.Unwrap(), 1)
 }
 
 func TestNewf(t *testing.T) {
@@ -25,9 +23,7 @@ func TestNewf(t *testing.T) {
 
 	assert.Equal(t, err.Error(), "Test Error #5: failed to spawn")
 	assert.Empty(t, err.Fields())
-
-	cause := err.Unwrap()
-	assert.Equal(t, reflect.TypeOf(cause).String(), "*errors.errorString")
+	assert.Length(t, err.Unwrap(), 1)
 }
 
 func testMethod(err error) error {
@@ -51,9 +47,7 @@ func TestWrapStdError(t *testing.T) {
 	err := Wrap(original)
 
 	assert.Equal(t, err.Error(), "original")
-
-	cause := errors.Unwrap(err)
-	assert.Equal(t, cause, original)
+	assert.Equal(t, err.Unwrap(), []error{original})
 }
 
 func TestWrapError(t *testing.T) {
@@ -117,6 +111,22 @@ func TestFieldsUncomparableValues(t *testing.T) {
 	assert.NotErrorIs(t, err1, err4)
 }
 
+type container struct {
+	value any
+}
+
+func TestFieldsUncomparableDynamicValues(t *testing.T) {
+	err1 := New("test").WithField("box", container{value: []int{1}})
+	err2 := New("test").WithField("box", container{value: []int{1}})
+	err3 := New("test").WithField("box", container{value: []int{2}})
+	err4 := New("test").WithField("box", container{value: 1})
+
+	assert.ErrorIs(t, err1, err2)
+	assert.NotErrorIs(t, err1, err3)
+	assert.NotErrorIs(t, err1, err4)
+	assert.ErrorIs(t, err4, New("test").WithField("box", container{value: 1}))
+}
+
 func TestFieldsFunctionValues(t *testing.T) {
 	callback := func() {}
 
@@ -137,7 +147,7 @@ func TestNilReceiver(t *testing.T) {
 	assert.NoError(t, err.WithField("action", "call"))
 	assert.NoError(t, err.WithFields(map[string]any{"action": "call"}))
 	assert.NoError(t, err.WithCause(New("cause")))
-	assert.NoError(t, err.Unwrap())
+	assert.Empty(t, err.Unwrap())
 	assert.False(t, err.Is(New("test")))
 	assert.NotErrorIs(t, New("test"), err)
 }
@@ -179,7 +189,22 @@ func TestWithCause(t *testing.T) {
 	err2 := err1.WithCause(original)
 
 	assert.NotSame(t, err1, err2)
-	assert.Same(t, err2.Unwrap(), original)
+	assert.Equal(t, err2.Unwrap(), []error{err1.err, original})
+	assert.ErrorIs(t, err2, original)
+}
+
+func TestWithCauseKeepsWrappedError(t *testing.T) {
+	cause := errors.New("cause")
+
+	err1 := Wrap(io.EOF).WithCause(cause)
+
+	assert.ErrorIs(t, err1, io.EOF)
+	assert.ErrorIs(t, err1, cause)
+
+	err2 := Newf("read: %w", io.EOF).WithCause(cause)
+
+	assert.ErrorIs(t, err2, io.EOF)
+	assert.ErrorIs(t, err2, cause)
 }
 
 func TestErrorsIs(t *testing.T) {

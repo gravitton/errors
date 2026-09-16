@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 
 ## [Unreleased](https://github.com/gravitton/errors/compare/v1.3.0...master)
+### Changed
+- `Error.Unwrap` returns `[]error` holding both the wrapped error and the cause, so `errors.Unwrap` now returns nil for an `*Error` (**breaking**)
+
+### Fixed
+- `Error.WithCause` no longer hides the wrapped error from `errors.Is` and `errors.As`
+- `Error.Is` no longer panics when a field holds a comparable type with an uncomparable dynamic value, such as a struct with an `any` field containing a slice
 
 
 ## v1.3.0 (2026-08-26)(https://github.com/gravitton/errors/compare/v1.2.1...v1.3.0)

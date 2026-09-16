@@ -69,8 +69,9 @@ func (e *Error) Error() string {
 	return e.err.Error()
 }
 
-// Fields returns a copy of the structured key-value data attached to this error.
-// Mutating the result does not affect the error.
+// Fields returns a shallow copy of the structured key-value data attached to
+// this error. Adding or removing keys does not affect the error; values that
+// are maps, slices or pointers remain shared.
 func (e *Error) Fields() map[string]any {
 	if e == nil {
 		return nil
@@ -119,18 +120,21 @@ func (e *Error) WithCause(err error) *Error {
 	}
 }
 
-// Unwrap returns the cause if one was set via WithCause; otherwise it returns
-// the underlying error created by New, Newf, or Wrap.
-func (e *Error) Unwrap() error {
+// Unwrap returns the underlying error created by New, Newf or Wrap, followed
+// by the cause if one was set via WithCause. Both stay visible to errors.Is
+// and errors.As, so attaching a cause never hides the wrapped error.
+// A nil *Error returns nil.
+func (e *Error) Unwrap() []error {
 	if e == nil {
 		return nil
 	}
 
+	errs := []error{e.err}
 	if e.cause != nil {
-		return e.cause
+		errs = append(errs, e.cause)
 	}
 
-	return e.err
+	return errs
 }
 
 // Is reports whether e matches target. Two *Error values are considered equal
@@ -138,8 +142,9 @@ func (e *Error) Unwrap() error {
 // e with the same value. This allows errors.Is to find a sentinel Error
 // anywhere in a chain, optionally scoped by fields.
 //
-// Field values of different types never match. Uncomparable values are
-// compared with reflect.DeepEqual, so function fields only match when both are nil.
+// Field values of different types never match. Uncomparable values, including
+// comparable types holding an uncomparable dynamic value, are compared with
+// reflect.DeepEqual, so function fields only match when both are nil.
 func (e *Error) Is(target error) bool {
 	var err *Error
 	if e == nil || !errors.As(target, &err) || err == nil {
@@ -191,8 +196,8 @@ func (e *Error) StackTrace() []uintptr {
 	return e.stack
 }
 
-// Frames resolves the captured stack trace into call frames, outermost call first.
-// The sequence is empty when no stack was captured.
+// Frames resolves the captured stack trace into call frames, innermost call
+// first. The sequence is empty when no stack was captured.
 func (e *Error) Frames() iter.Seq[runtime.Frame] {
 	return func(yield func(runtime.Frame) bool) {
 		if e == nil || len(e.stack) == 0 {
@@ -212,12 +217,12 @@ func (e *Error) Frames() iter.Seq[runtime.Frame] {
 // details renders the message together with the fields, the cause and the
 // stack trace, as printed by the %+v verb.
 func (e *Error) details() string {
+	if e == nil {
+		return e.Error()
+	}
+
 	b := &strings.Builder{}
 	b.WriteString(e.Error())
-
-	if e == nil {
-		return b.String()
-	}
 
 	for _, k := range slices.Sorted(maps.Keys(e.data)) {
 		fmt.Fprintf(b, "\n\t%s=%v", k, e.data[k])
@@ -234,7 +239,8 @@ func (e *Error) details() string {
 	return b.String()
 }
 
-// callers returns up to 32 program counters starting skip frames above the caller.
+// callers returns up to 32 program counters starting skip frames above the
+// caller; deeper frames are dropped.
 func callers(skip int) []uintptr {
 	stack := make([]uintptr, 32)
 	n := runtime.Callers(skip+2, stack)
@@ -242,14 +248,14 @@ func callers(skip int) []uintptr {
 	return stack[:n]
 }
 
-// equal compares two field values without panicking on uncomparable types.
+// equal compares two field values without panicking on uncomparable types,
+// including comparable types that hold an uncomparable dynamic value.
 func equal(a, b any) bool {
-	t := reflect.TypeOf(a)
-	if t != reflect.TypeOf(b) {
+	if reflect.TypeOf(a) != reflect.TypeOf(b) {
 		return false
 	}
 
-	if t == nil || t.Comparable() {
+	if a == nil || (reflect.ValueOf(a).Comparable() && reflect.ValueOf(b).Comparable()) {
 		return a == b
 	}
 
