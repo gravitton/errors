@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/gravitton/assert"
@@ -137,6 +138,21 @@ func TestFieldsNilValues(t *testing.T) {
 	assert.ErrorIs(t, base.WithField("k", nil), base.WithField("k", nil))
 	assert.NotErrorIs(t, base.WithField("k", nil), base.WithField("k", 1))
 	assert.NotErrorIs(t, base.WithField("k", 1), base.WithField("k", nil))
+	assert.NotErrorIs(t, base, base.WithField("k", nil))
+}
+
+type sliceError []string
+
+func (e sliceError) Error() string {
+	return strings.Join(e, ", ")
+}
+
+func TestErrorsIsUncomparableError(t *testing.T) {
+	err1 := Wrap(sliceError{"a"})
+	err2 := Wrap(sliceError{"a"})
+
+	assert.NotErrorIs(t, err1, err2)
+	assert.ErrorIs(t, err1, err1)
 }
 
 func TestFieldsFunctionValues(t *testing.T) {
@@ -197,6 +213,17 @@ func TestFormat(t *testing.T) {
 	assert.Contains(t, details, "caused by: original")
 	assert.Contains(t, details, "github.com/gravitton/errors.TestFormat")
 	assert.Equal(t, fmt.Sprintf("%d", err), "%!d(string=test)")
+}
+
+func TestFormatNestedCause(t *testing.T) {
+	inner := New("inner").WithField("layer", 1)
+	outer := New("outer").WithCause(inner)
+
+	details := fmt.Sprintf("%+v", outer)
+
+	assert.Contains(t, details, "caused by: inner")
+	assert.Contains(t, details, "layer=1")
+	assert.Equal(t, strings.Count(details, "github.com/gravitton/errors.TestFormatNestedCause"), 2)
 }
 
 func TestFormatFlags(t *testing.T) {

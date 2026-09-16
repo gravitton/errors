@@ -147,18 +147,20 @@ func (e *Error) Unwrap() []error {
 // Field values of different types never match. Uncomparable values, including
 // comparable types holding an uncomparable dynamic value, are compared with
 // reflect.DeepEqual, so function fields only match when both are nil.
+// Underlying errors of an uncomparable type never match.
 func (e *Error) Is(target error) bool {
 	err, ok := target.(*Error)
 	if !ok || e == nil || err == nil {
 		return false
 	}
 
-	if e.err != err.err {
+	if !same(e.err, err.err) {
 		return false
 	}
 
 	for k, v := range err.data {
-		if !equal(e.data[k], v) {
+		value, ok := e.data[k]
+		if !ok || !equal(value, v) {
 			return false
 		}
 	}
@@ -168,8 +170,8 @@ func (e *Error) Is(target error) bool {
 
 // Format implements fmt.Formatter. The message is printed like a plain string,
 // so %s, %q, %x and %v honour width, precision and flags. %+v additionally
-// prints the fields, the cause chain and the stack trace, and %#v prints the
-// error in Go syntax.
+// prints the fields, the cause chain and the stack trace, formatting the cause
+// with %+v as well, and %#v prints the error in Go syntax.
 func (e *Error) Format(s fmt.State, verb rune) {
 	switch {
 	case verb == 'v' && s.Flag('+'):
@@ -233,7 +235,7 @@ func (e *Error) details() string {
 	}
 
 	if e.cause != nil {
-		fmt.Fprintf(b, "\ncaused by: %v", e.cause)
+		fmt.Fprintf(b, "\ncaused by: %+v", e.cause)
 	}
 
 	for frame := range e.Frames() {
@@ -264,9 +266,19 @@ func equal(a, b any) bool {
 		return false
 	}
 
-	if va.Comparable() && vb.Comparable() {
+	if va.Comparable() {
 		return a == b
 	}
 
 	return reflect.DeepEqual(a, b)
+}
+
+// same reports whether two errors are the identical value. Errors of an
+// uncomparable type are never the same, so the comparison cannot panic.
+func same(a, b error) bool {
+	if a != nil && !reflect.TypeOf(a).Comparable() {
+		return false
+	}
+
+	return a == b
 }

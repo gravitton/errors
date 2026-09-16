@@ -51,7 +51,10 @@ func (e *MultiError) Add(errs ...error) {
 // empty string. A single-error MultiError returns that error's message
 // unchanged. Otherwise a numbered summary is returned.
 func (e *MultiError) Error() string {
-	errs := e.Unwrap()
+	e.mutex.RLock()
+	defer e.mutex.RUnlock()
+
+	errs := e.errs
 
 	switch len(errs) {
 	case 0:

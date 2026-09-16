@@ -15,12 +15,13 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - `Error.Unwrap` returns `[]error` holding both the wrapped error and the cause, so `errors.Unwrap` now returns nil for an `*Error` (**breaking**)
 - `Error.Is` matches on the underlying error identity instead of the message text, so two independent `New` calls with the same text no longer match (**breaking**)
 - `Error.Is` inspects only the target itself, no longer errors wrapped by the target (**breaking**)
-- `Error.Format` honours width, precision and flags for `%s`, `%q`, `%v` and `%x`
+- `Error.Format` honours width, precision and flags for `%s`, `%q`, `%v` and `%x`, and prints an `*Error` cause with `%+v` including its fields and stack trace
 - `MultiError.Unwrap` returns a copy of the collected errors
 
 ### Fixed
 - `Error.WithCause` no longer hides the wrapped error from `errors.Is` and `errors.As`
-- `Error.Is` no longer panics when a field holds a comparable type with an uncomparable dynamic value, such as a struct with an `any` field containing a slice
+- `Error.Is` no longer panics on uncomparable values, whether a field holding a comparable type with an uncomparable dynamic value or a wrapped error of an uncomparable type; such errors never match
+- `Error.Is` no longer matches a target field holding `nil` against an error that lacks the field
 
 
 ## v1.3.0 (2026-08-26)(https://github.com/gravitton/errors/compare/v1.2.1...v1.3.0)
