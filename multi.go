@@ -53,10 +53,10 @@ func (e *MultiError) Add(errs ...error) {
 	}
 }
 
-// Error returns the combined error message. A nil or empty MultiError returns
-// an empty string. A single-error MultiError returns that error's message
-// unchanged, otherwise a numbered summary is returned with every message
-// indented.
+// Error returns the combined error message. An empty MultiError returns an
+// empty string and a nil one reports "<nil>", like a nil *Error. A
+// single-error MultiError returns that error's message unchanged, otherwise a
+// numbered summary is returned with every message indented.
 func (e *MultiError) Error() string {
 	return e.render(func(err error) string {
 		return err.Error()
@@ -126,10 +126,14 @@ func (e *MultiError) details() string {
 	})
 }
 
-// render lays out the collected errors: empty for no errors, the sole error
-// as rendered, and otherwise a numbered summary with every rendered error
-// indented.
+// render lays out the collected errors: "<nil>" for a nil receiver, empty for
+// no errors, the sole error as rendered, and otherwise a numbered summary with
+// every rendered error indented.
 func (e *MultiError) render(text func(error) string) string {
+	if e == nil {
+		return "<nil>"
+	}
+
 	errs := e.Unwrap()
 
 	switch len(errs) {

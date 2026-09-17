@@ -46,7 +46,7 @@ go get github.com/gravitton/errors
 Creating and wrapping:
 
 ```go
-var ErrNotFound = errors.Sentinel("not found")  // no stack trace, captured when first derived from
+var ErrNotFound = errors.Sentinel("not found")  // no stack trace, captured when first wrapped
 
 err := errors.New("boom")                       // *Error with a stack trace
 err = errors.Newf("user %d missing", 42)
@@ -56,7 +56,8 @@ err = errors.Wrap(io.EOF)                       // an *Error with a stack trace 
 Adding context keeps everything the error already carries:
 
 ```go
-err := ErrNotFound.WithField("id", 42)   // the stack trace is captured here
+err := ErrNotFound.WithField("id", 42)   // still no stack trace
+err = errors.Wrap(err)                   // the stack trace is captured here
 err = errors.Newf("load user: %w", err)  // fields, cause and stack are inherited
 err = errors.Wrap(fmt.Errorf("handler: %w", err))
 
@@ -201,16 +202,17 @@ error is formatted with `%+v` in turn.
 **Stack traces:** `New`, `Newf` and `Wrap` capture up to 32 program counters above the caller; when the stack is deeper
 the outermost calls are dropped, `Truncated` reports it and `%+v` ends the trace with `...`. `StackTrace` returns a copy,
 and `Frames` may yield more frames than program counters when calls were inlined. `Sentinel` captures nothing, so
-a package-level error does not point at package initialization; instead the first `Wrap`, `Newf`, `WithField`,
-`WithFields` or `WithCause` applied to a stackless error captures the stack there, where the error is raised. `With*`
-methods otherwise keep the stack of the error they derive from. When `Wrap` or `Newf` with `%w` reach an `*Error` by
+a package-level error does not point at package initialization; instead the first `Wrap` or `Newf` applied to a
+stackless error captures the stack there, where the error is raised. `WithField`, `WithFields` and `WithCause` never
+capture a stack: they keep the stack of the error they derive from, or its absence, so a sentinel scoped by fields is
+still a sentinel. When `Wrap` or `Newf` with `%w` reach an `*Error` by
 unwrapping one error at a time, they inherit its fields, cause, and stack instead of capturing a new one, so context
 can be added at every layer without losing anything. An error wrapping several errors at once, such as a
 `MultiError`, is never entered, so nothing is inherited from one of its members.
 
 **Multi error:** `Add` skips `nil` errors, typed `nil` values, and the collection itself, `Unwrap` returns a copy
-safe to modify, and all methods are safe for concurrent use. A `nil` `*MultiError` reads as an empty collection, but
-`Add` panics on it. A single collected error reports its message unchanged. `ErrorOrNil` is the only way to obtain a
+safe to modify, and all methods are safe for concurrent use. A `nil` `*MultiError` reads as an empty collection,
+prints as `<nil>`, and `Add` panics on it. A single collected error reports its message unchanged. `ErrorOrNil` is the only way to obtain a
 `nil` `error` from a collection, so return it rather than the `*MultiError` itself.
 
 ## Credits

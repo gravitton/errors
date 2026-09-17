@@ -142,29 +142,44 @@ func TestSentinel(t *testing.T) {
 	assert.Equal(t, errSentinel.Error(), "sentinel")
 	assert.Empty(t, errSentinel.StackTrace())
 	assert.Empty(t, slices.Collect(errSentinel.Frames()))
-	assert.NotSame(t, errSentinel.WithFields(nil), errSentinel)
 	assert.NotContains(t, fmt.Sprintf("%+v", errSentinel), "\n")
 }
 
-func TestSentinelCapturesStackOnDerive(t *testing.T) {
-	derived := []*Error{
-		errSentinel.WithField("id", 1),
-		errSentinel.WithFields(map[string]any{"id": 1}),
-		errSentinel.WithFields(nil),
-		errSentinel.WithCause(io.EOF),
-		errSentinel.WithCause(nil),
+func TestSentinelCapturesStackOnWrap(t *testing.T) {
+	scoped := errSentinel.WithField("id", 1)
+
+	wrapped := []*Error{
 		Wrap(errSentinel),
+		Wrap(scoped),
 		Wrap(fmt.Errorf("ctx: %w", errSentinel)),
 		Newf("ctx: %w", errSentinel),
+		Newf("ctx: %w", scoped),
 	}
 
-	for _, err := range derived {
+	for _, err := range wrapped {
 		assert.ErrorIs(t, err, errSentinel)
-		assert.Equal(t, slices.Collect(err.Frames())[0].Function, "github.com/gravitton/errors.TestSentinelCapturesStackOnDerive")
+		assert.Equal(t, slices.Collect(err.Frames())[0].Function, "github.com/gravitton/errors.TestSentinelCapturesStackOnWrap")
 	}
 
 	assert.Empty(t, errSentinel.StackTrace())
 	assert.NotSame(t, Wrap(errSentinel), errSentinel)
+}
+
+func TestSentinelStaysStacklessOnWith(t *testing.T) {
+	derived := []*Error{
+		errSentinel.WithField("id", 1),
+		errSentinel.WithFields(map[string]any{"id": 1}),
+		errSentinel.WithCause(io.EOF),
+		errSentinel.WithField("id", 1).WithCause(io.EOF),
+	}
+
+	for _, err := range derived {
+		assert.ErrorIs(t, err, errSentinel)
+		assert.Empty(t, err.StackTrace())
+	}
+
+	assert.Same(t, errSentinel.WithFields(nil), errSentinel)
+	assert.Same(t, errSentinel.WithCause(nil), errSentinel)
 }
 
 func TestDeriveKeepsExistingStack(t *testing.T) {

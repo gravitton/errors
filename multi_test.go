@@ -64,7 +64,7 @@ func TestMultiErrorEmpty(t *testing.T) {
 func TestMultiErrorNil(t *testing.T) {
 	var errs *MultiError
 
-	assert.Equal(t, errs.Error(), "")
+	assert.Equal(t, errs.Error(), "<nil>")
 	assert.Equal(t, errs.GoString(), "(*errors.MultiError)(nil)")
 	assert.Equal(t, errs.Len(), 0)
 	assert.Length(t, errs.Unwrap(), 0)
@@ -187,7 +187,8 @@ func TestMultiErrorFormatSingle(t *testing.T) {
 func TestMultiErrorFormatEmpty(t *testing.T) {
 	var errs *MultiError
 
-	assert.Equal(t, fmt.Sprintf("%+v", errs), "")
+	assert.Equal(t, fmt.Sprintf("%v", errs), "<nil>")
+	assert.Equal(t, fmt.Sprintf("%+v", errs), "<nil>")
 	assert.Equal(t, fmt.Sprintf("%+v", NewMulti()), "")
 	assert.Equal(t, fmt.Sprintf("%v", NewMulti()), "")
 }

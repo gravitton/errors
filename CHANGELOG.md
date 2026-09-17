@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - `Error.Truncated` reports whether the stack trace was cut at 32 frames; `%+v` ends such a trace with `...`
 
 ### Changed
-- `Wrap`, `Newf`, `Error.WithField`, `Error.WithFields` and `Error.WithCause` capture the current stack trace when the error they derive from has none, so an error raised from a `Sentinel` points at the place it was raised
+- `Wrap` and `Newf` capture the current stack trace when the error they derive from has none, so an error raised from a `Sentinel` points at the place it was raised; `Error.WithField`, `Error.WithFields` and `Error.WithCause` keep the error stackless
 - `Wrap` returns a copy with the current stack trace instead of the same `*Error` when the given one has no stack trace
 - `Wrap` and `Newf` inherit only from an `*Error` reached by unwrapping one error at a time, so wrapping a `MultiError` or a multi-`%w` error no longer adopts the fields, cause and stack trace of its first member (**breaking**)
 - `Error.Is` never follows a cause while looking for the target's underlying error, so fields added after `Wrap` or `Newf` no longer scope a sentinel that was only attached with `WithCause`; the result is now the same with or without the wrapping layer (**breaking**)
@@ -32,7 +32,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - `Error.Format` honors width, precision and flags for `%s`, `%q`, `%v` and `%x`, and prints an `*Error` cause with `%+v` including its fields and stack trace
 - `MultiError.Unwrap` returns a copy of the collected errors
 - `MultiError.Errors` removed in favor of `MultiError.Unwrap` (**breaking**)
-- `Error.WithFields` returns the receiver unchanged when given no fields and the error already has a stack trace
+- `Error.WithFields` returns the receiver unchanged when given no fields, and `Error.WithCause` when given a `nil` cause
 - `Error.WithCause` appends to the causes already attached instead of replacing them, and ignores a `nil` cause; `Error.Unwrap` returns them all (**breaking**)
 - `%+v` formats the underlying error with `%+v`, so a wrapped `MultiError` prints its members in full
 - `%#v` prints `causes` as a slice instead of a single `cause` (**breaking**)
@@ -43,7 +43,6 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - `MultiError.Add` documents that only the collection itself is skipped, not a cycle through another error
 - `Wrap` returns nil for a typed nil argument, such as a nil `*MultiError`, the same as `MultiError.Add` skips it
 - `MultiError.GoString` and `%#v` print `&errors.MultiError{errs:...}` like `Error.GoString`, and `(*errors.MultiError)(nil)` for a nil receiver (**breaking**)
-- Minimum Go version lowered to 1.26, the first release with `errors.AsType`
 - `Error.Is` documents that fields can widen a match but never narrow one, since `errors.Is` still unwraps into the errors an `*Error` was derived from
 - `%+v` documents that an error reached only through a wrapper without a `Format` method, such as a multi-`%w` `fmt.Errorf`, prints its message alone
 
@@ -53,7 +52,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - `Error.Is` no longer panics on uncomparable values, whether a field holding a comparable type with an uncomparable dynamic value or a wrapped error of an uncomparable type; such errors never match
 - `Error.Is` no longer matches a target field holding `nil` against an error that lacks the field
 - `Error.Is` no longer panics on a wrapped error of a comparable type holding an uncomparable dynamic value
-- `MultiError.Error` no longer panics on a nil receiver and no longer holds the lock while formatting collected errors
+- `MultiError.Error` no longer panics on a nil receiver, reports `<nil>` like `Error.Error`, and no longer holds the lock while formatting collected errors
 - `Error.Is` no longer matches two zero-value `Error` values
 
 

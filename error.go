@@ -34,9 +34,10 @@ func New(text string) *Error {
 
 // Sentinel creates an Error from the given text without a stack trace. It is
 // meant for package-level errors: the stack trace is captured later, where the
-// sentinel is first derived from by Wrap, Newf, WithField, WithFields or
-// WithCause, so it points at the place the error was raised rather than at
-// package initialisation.
+// sentinel is first passed to Wrap or wrapped by Newf, so it points at the
+// place the error was raised rather than at package initialisation. WithField,
+// WithFields and WithCause keep a sentinel stackless, so derive a scoped
+// sentinel freely and Wrap it where it is raised.
 func Sentinel(text string) *Error {
 	return &Error{
 		err: errors.New(text),
@@ -133,31 +134,19 @@ func (e *Error) Fields() map[string]any {
 }
 
 // WithField returns a copy of the error with the given key-value field added.
-// The original error is not modified. When the error has no stack trace the
-// current one is captured. A nil *Error returns nil, so chaining after
-// Wrap(nil) does not panic.
+// The original error is not modified and the stack trace, or its absence, is
+// kept. A nil *Error returns nil, so chaining after Wrap(nil) does not panic.
 func (e *Error) WithField(key string, value any) *Error {
-	return e.withFields(map[string]any{key: value}, 1)
+	return e.WithFields(map[string]any{key: value})
 }
 
 // WithFields returns a copy of the error with the given fields merged in.
-// The original error is not modified. When the error has no stack trace the
-// current one is captured, even when values is empty; otherwise an empty
-// values returns the receiver as is. A nil *Error returns nil, so chaining
-// after Wrap(nil) does not panic.
+// The original error is not modified and the stack trace, or its absence, is
+// kept. An empty values returns the receiver as is. A nil *Error returns nil,
+// so chaining after Wrap(nil) does not panic.
 func (e *Error) WithFields(values map[string]any) *Error {
-	return e.withFields(values, 1)
-}
-
-// withFields implements WithField and WithFields, capturing a missing stack
-// trace skip frames above the caller.
-func (e *Error) withFields(values map[string]any, skip int) *Error {
-	if e == nil {
-		return nil
-	}
-
-	if len(values) == 0 {
-		return e.traced(skip + 1)
+	if e == nil || len(values) == 0 {
+		return e
 	}
 
 	data := make(map[string]any, len(e.data)+len(values))
@@ -166,7 +155,6 @@ func (e *Error) withFields(values map[string]any, skip int) *Error {
 
 	derived := *e
 	derived.data = data
-	derived.stack = e.trace(skip + 1)
 
 	return &derived
 }
@@ -174,21 +162,16 @@ func (e *Error) withFields(values map[string]any, skip int) *Error {
 // WithCause returns a copy of the error with the given cause attached after
 // the causes it already carries, so adding a cause never hides another one.
 // Every cause is returned by Unwrap, making it visible to errors.Is and
-// errors.As. A nil cause is ignored. When the error has no stack trace the
-// current one is captured. A nil *Error returns nil, so chaining after
-// Wrap(nil) does not panic.
+// errors.As. A nil cause returns the receiver as is. The stack trace, or its
+// absence, is kept. A nil *Error returns nil, so chaining after Wrap(nil)
+// does not panic.
 func (e *Error) WithCause(err error) *Error {
-	if e == nil {
-		return nil
-	}
-
-	if err == nil {
-		return e.traced(1)
+	if e == nil || err == nil {
+		return e
 	}
 
 	derived := *e
 	derived.causes = append(slices.Clip(e.causes), err)
-	derived.stack = e.trace(1)
 
 	return &derived
 }
