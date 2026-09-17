@@ -19,10 +19,10 @@ type detailed interface {
 // %+v prints the details and %#v prints the error in Go syntax.
 func format(e detailed, s fmt.State, verb rune) {
 	switch {
-	case verb == 'v' && s.Flag('+'):
-		io.WriteString(s, e.details())
 	case verb == 'v' && s.Flag('#'):
 		io.WriteString(s, e.GoString())
+	case verb == 'v' && s.Flag('+'):
+		io.WriteString(s, e.details())
 	default:
 		fmt.Fprintf(s, fmt.FormatString(s, verb), e.Error())
 	}

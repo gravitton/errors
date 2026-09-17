@@ -8,11 +8,19 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased](https://github.com/gravitton/errors/compare/v1.3.0...main)
 ### Added
+- `Sentinel` creates an `*Error` without a stack trace, meant for package-level errors
 - `ErrUnsupported` re-exported from the standard library
 - `Error.GoString` and `%#v` print the error in Go syntax
 - `MultiError.Format` implements `fmt.Formatter`: `%+v` prints every collected error with its fields, stack trace and cause
 
 ### Changed
+- `Wrap`, `Newf`, `Error.WithField`, `Error.WithFields` and `Error.WithCause` capture the current stack trace when the error they derive from has none, so an error raised from a `Sentinel` points at the place it was raised
+- `Wrap` returns a copy with the current stack trace instead of the same `*Error` when the given one has no stack trace
+- `Wrap` and `Newf` inherit only from an `*Error` reached by unwrapping one error at a time, so wrapping a `MultiError` or a multi-`%w` error no longer adopts the fields, cause and stack trace of its first member (**breaking**)
+- `Error.Is` never follows a cause while looking for the target's underlying error, so fields added after `Wrap` or `Newf` no longer scope a sentinel that was only attached with `WithCause`; the result is now the same with or without the wrapping layer (**breaking**)
+- `MultiError.Error` indents every message with a tab instead of a space, matching `%+v`, so multi-line messages stay aligned (**breaking**)
+- `MultiError.Add` skips typed nil pointers such as `Wrap(nil)` and the collection itself
+- `%#v` takes precedence over `%+v` when both flags are given
 - `Error.Unwrap` returns `[]error` holding both the wrapped error and the cause, so `errors.Unwrap` now returns nil for an `*Error` (**breaking**)
 - `Error.Is` matches on the underlying error identity instead of the message text, so two independent `New` calls with the same text no longer match (**breaking**)
 - `Error.Is` inspects only the target itself, no longer errors wrapped by the target (**breaking**)

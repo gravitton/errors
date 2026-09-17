@@ -77,6 +77,25 @@ func TestWrapInherits(t *testing.T) {
 	assert.Same(t, found, outer)
 }
 
+func TestWrapDoesNotInheritFromCollection(t *testing.T) {
+	a := New("a").WithField("from", "a").WithCause(io.EOF)
+	b := New("b").WithField("from", "b")
+
+	joined := Wrap(Join(a, b))
+
+	assert.Empty(t, joined.Fields())
+	assert.Length(t, joined.Unwrap(), 1)
+	assert.Equal(t, slices.Collect(joined.Frames())[0].Function, "github.com/gravitton/errors.TestWrapDoesNotInheritFromCollection")
+	assert.ErrorIs(t, joined, a)
+	assert.ErrorIs(t, joined, b)
+
+	multi := Newf("%w and %w", a, b)
+
+	assert.Empty(t, multi.Fields())
+	assert.ErrorIs(t, multi, a)
+	assert.ErrorIs(t, multi, b)
+}
+
 func TestWrapInheritsTypedNil(t *testing.T) {
 	var inner *Error
 	outer := Wrap(fmt.Errorf("ctx: %w", inner))
@@ -96,6 +115,50 @@ func TestNewfInherits(t *testing.T) {
 	assert.ErrorIs(t, outer, inner.WithField("id", 42))
 	assert.ErrorIs(t, outer, inner.WithField("attempt", 3))
 	assert.NotErrorIs(t, inner, outer)
+}
+
+var errSentinel = Sentinel("sentinel")
+
+func TestSentinel(t *testing.T) {
+	assert.Equal(t, errSentinel.Error(), "sentinel")
+	assert.Empty(t, errSentinel.StackTrace())
+	assert.Empty(t, slices.Collect(errSentinel.Frames()))
+	assert.Same(t, errSentinel.WithFields(nil), errSentinel)
+	assert.NotContains(t, fmt.Sprintf("%+v", errSentinel), "\n")
+}
+
+func TestSentinelCapturesStackOnDerive(t *testing.T) {
+	derived := []*Error{
+		errSentinel.WithField("id", 1),
+		errSentinel.WithFields(map[string]any{"id": 1}),
+		errSentinel.WithCause(io.EOF),
+		Wrap(errSentinel),
+		Wrap(fmt.Errorf("ctx: %w", errSentinel)),
+		Newf("ctx: %w", errSentinel),
+	}
+
+	for _, err := range derived {
+		assert.ErrorIs(t, err, errSentinel)
+		assert.Equal(t, slices.Collect(err.Frames())[0].Function, "github.com/gravitton/errors.TestSentinelCapturesStackOnDerive")
+	}
+
+	assert.Empty(t, errSentinel.StackTrace())
+	assert.NotSame(t, Wrap(errSentinel), errSentinel)
+}
+
+func TestDeriveKeepsExistingStack(t *testing.T) {
+	inner := New("inner")
+
+	derived := []*Error{
+		inner.WithField("id", 1),
+		inner.WithCause(io.EOF),
+		Wrap(inner),
+		Newf("ctx: %w", inner),
+	}
+
+	for _, err := range derived {
+		assert.Equal(t, err.StackTrace(), inner.StackTrace())
+	}
 }
 
 func TestStackTrace(t *testing.T) {
@@ -320,6 +383,7 @@ func TestFormatGoSyntax(t *testing.T) {
 	var nilErr *Error
 
 	assert.Equal(t, fmt.Sprintf("%#v", nilErr), "(*errors.Error)(nil)")
+	assert.Equal(t, fmt.Sprintf("%+#v", New("test")), `&errors.Error{err:&errors.errorString{s:"test"}, data:map[string]interface {}(nil), cause:<nil>}`)
 }
 
 func TestFormatNil(t *testing.T) {
@@ -396,6 +460,47 @@ func TestErrorsIsError(t *testing.T) {
 	assert.ErrorIs(t, err4, err1)    // missing fields
 	assert.NotErrorIs(t, err4, err2) // different error
 	assert.NotErrorIs(t, err4, err3) // different fields
+}
+
+func TestErrorsIsFieldsScopeDerivedOnly(t *testing.T) {
+	sentinel := New("sentinel")
+	target := sentinel.WithField("k", 1)
+
+	direct := New("other").WithCause(sentinel).WithField("k", 1)
+	layered := Newf("ctx: %w", New("other").WithCause(sentinel)).WithField("k", 1)
+	wrapped := Wrap(fmt.Errorf("ctx: %w", New("other").WithCause(sentinel))).WithField("k", 1)
+
+	assert.ErrorIs(t, direct, sentinel)
+	assert.ErrorIs(t, layered, sentinel)
+	assert.ErrorIs(t, wrapped, sentinel)
+
+	assert.NotErrorIs(t, direct, target)
+	assert.NotErrorIs(t, layered, target)
+	assert.NotErrorIs(t, wrapped, target)
+
+	assert.ErrorIs(t, Newf("ctx: %w", sentinel).WithField("k", 1), target)
+	assert.ErrorIs(t, New("other").WithCause(target), target)
+}
+
+type customIs struct {
+	match error
+}
+
+func (e customIs) Error() string {
+	return "custom"
+}
+
+func (e customIs) Is(target error) bool {
+	return target == e.match
+}
+
+func TestErrorsIsHonoursIsMethod(t *testing.T) {
+	sentinel := New("sentinel")
+	err := Wrap(customIs{match: sentinel.err}).WithField("k", 1)
+
+	assert.ErrorIs(t, err, sentinel)
+	assert.ErrorIs(t, err, sentinel.WithField("k", 1))
+	assert.NotErrorIs(t, err, sentinel.WithField("k", 2))
 }
 
 func TestErrorsIsInspectsOnlyTarget(t *testing.T) {

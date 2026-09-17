@@ -2,6 +2,7 @@ package errors
 
 import (
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -31,7 +32,9 @@ func Join(errs ...error) error {
 }
 
 // Add adds the given errors to the collection. Nil errors are silently
-// ignored. It is safe to call Add concurrently with other Add calls.
+// ignored, including typed nil pointers such as Wrap(nil), and so is the
+// collection itself, which would otherwise recurse forever. It is safe to
+// call Add concurrently with other Add calls.
 func (e *MultiError) Add(errs ...error) {
 	if len(errs) == 0 {
 		return
@@ -41,7 +44,7 @@ func (e *MultiError) Add(errs ...error) {
 	defer e.mutex.Unlock()
 
 	for _, err := range errs {
-		if err != nil {
+		if !isNil(err) && err != error(e) {
 			e.errs = append(e.errs, err)
 		}
 	}
@@ -49,23 +52,12 @@ func (e *MultiError) Add(errs ...error) {
 
 // Error returns the combined error message. A nil or empty MultiError returns
 // an empty string. A single-error MultiError returns that error's message
-// unchanged. Otherwise a numbered summary is returned.
+// unchanged. Otherwise a numbered summary is returned with every message
+// indented.
 func (e *MultiError) Error() string {
-	errs := e.Unwrap()
-
-	switch len(errs) {
-	case 0:
-		return ""
-	case 1:
-		return errs[0].Error()
-	default:
-		msg := make([]string, len(errs))
-		for i, err := range errs {
-			msg[i] = err.Error()
-		}
-
-		return fmt.Sprintf("%d errors occurred:\n %s", len(errs), strings.Join(msg, "\n "))
-	}
+	return e.render(func(err error) string {
+		return err.Error()
+	})
 }
 
 // Unwrap returns a copy of the collected errors, satisfying the Go 1.20+
@@ -120,22 +112,42 @@ func (e *MultiError) GoString() string {
 }
 
 // details renders the collected errors with their details, as printed by the
-// %+v verb. It mirrors Error: empty for no errors, the sole error unchanged,
-// and otherwise a numbered summary with every error indented.
+// %+v verb, laid out exactly like Error.
 func (e *MultiError) details() string {
+	return e.render(func(err error) string {
+		return fmt.Sprintf("%+v", err)
+	})
+}
+
+// render lays out the collected errors: empty for no errors, the sole error
+// as rendered, and otherwise a numbered summary with every rendered error
+// indented.
+func (e *MultiError) render(text func(error) string) string {
 	errs := e.Unwrap()
 
 	switch len(errs) {
 	case 0:
 		return ""
 	case 1:
-		return fmt.Sprintf("%+v", errs[0])
+		return text(errs[0])
 	default:
 		msg := make([]string, len(errs))
 		for i, err := range errs {
-			msg[i] = indent(fmt.Sprintf("%+v", err))
+			msg[i] = indent(text(err))
 		}
 
 		return fmt.Sprintf("%d errors occurred:\n%s", len(errs), strings.Join(msg, "\n"))
 	}
+}
+
+// isNil reports whether err is nil, either as an interface or as a typed nil
+// pointer stored in one.
+func isNil(err error) bool {
+	if err == nil {
+		return true
+	}
+
+	value := reflect.ValueOf(err)
+
+	return value.Kind() == reflect.Pointer && value.IsNil()
 }

@@ -38,7 +38,7 @@ func TestJoinMultiple(t *testing.T) {
 	err := Join(err1, err2)
 
 	assert.Error(t, err)
-	assert.Equal(t, err.Error(), "2 errors occurred:\n foo\n bar")
+	assert.Equal(t, err.Error(), "2 errors occurred:\n\tfoo\n\tbar")
 	assert.ErrorIs(t, err, err1)
 	assert.ErrorIs(t, err, err2)
 }
@@ -93,7 +93,7 @@ func TestMultiErrorAddErrors(t *testing.T) {
 	errs.Add(err1, err2)
 
 	assert.Equal(t, errs.Len(), 2)
-	assert.Equal(t, errs.Error(), "2 errors occurred:\n foo\n bar")
+	assert.Equal(t, errs.Error(), "2 errors occurred:\n\tfoo\n\tbar")
 	assert.Matches(t, errs.GoString(), `^\[\]error\{(\(\*errors.errorString\)\((0x)?[0-9a-f]+\)(, )?){2}\}$`)
 	assert.Length(t, errs.Unwrap(), 2)
 	assert.Equal(t, errs.Unwrap(), []error{err1, err2})
@@ -106,9 +106,28 @@ func TestMultiErrorAddNil(t *testing.T) {
 	errs.Add()
 	errs.Add(nil)
 	errs.Add(nil, nil)
+	errs.Add(Wrap(nil))
+	errs.Add(Wrap(nil).WithField("k", 1))
+
+	var typedNil *MultiError
+	errs.Add(typedNil)
 
 	assert.Length(t, errs.Unwrap(), 0)
 	assert.NoError(t, errs.ErrorOrNil())
+}
+
+func TestMultiErrorAddSelf(t *testing.T) {
+	errs := NewMulti()
+	errs.Add(errs, io.EOF, errs)
+
+	assert.Equal(t, errs.Unwrap(), []error{io.EOF})
+	assert.Equal(t, errs.Error(), "EOF")
+}
+
+func TestMultiErrorMultilineMessage(t *testing.T) {
+	errs := Join(errors.New("a\nb"), io.EOF)
+
+	assert.Equal(t, errs.Error(), "2 errors occurred:\n\ta\n\tb\n\tEOF")
 }
 
 func TestMultiErrorErrorIs(t *testing.T) {
@@ -147,7 +166,7 @@ func TestMultiErrorFormat(t *testing.T) {
 	err2 := io.EOF
 	errs := Join(err1, err2)
 
-	assert.Equal(t, fmt.Sprintf("%s", errs), "2 errors occurred:\n foo\n EOF")
+	assert.Equal(t, fmt.Sprintf("%s", errs), "2 errors occurred:\n\tfoo\n\tEOF")
 	assert.Equal(t, fmt.Sprintf("%q", Join(err2)), `"EOF"`)
 	assert.Equal(t, fmt.Sprintf("[%5s]", Join(err2)), "[  EOF]")
 	assert.Equal(t, fmt.Sprintf("%#v", Join(err2)), fmt.Sprintf("%#v", []error{err2}))
