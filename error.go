@@ -81,16 +81,23 @@ func (e *Error) Fields() map[string]any {
 }
 
 // WithField returns a copy of the error with the given key-value field added.
-// The original error is not modified.
+// The original error is not modified. A nil *Error returns nil, so chaining
+// after Wrap(nil) does not panic.
 func (e *Error) WithField(key string, value any) *Error {
 	return e.WithFields(map[string]any{key: value})
 }
 
 // WithFields returns a copy of the error with the given fields merged in.
-// The original error is not modified. A nil *Error returns nil, so chaining after Wrap(nil) does not panic.
+// The original error is not modified. When values is empty the receiver is
+// returned as is. A nil *Error returns nil, so chaining after Wrap(nil) does
+// not panic.
 func (e *Error) WithFields(values map[string]any) *Error {
 	if e == nil {
 		return nil
+	}
+
+	if len(values) == 0 {
+		return e
 	}
 
 	data := make(map[string]any, len(e.data)+len(values))
@@ -106,7 +113,9 @@ func (e *Error) WithFields(values map[string]any) *Error {
 }
 
 // WithCause returns a copy of the error with the given cause attached.
-// The cause is returned by Unwrap, making it visible to errors.Is and errors.As. A nil *Error returns nil.
+// The cause is returned by Unwrap, making it visible to errors.Is and
+// errors.As. A nil *Error returns nil, so chaining after Wrap(nil) does not
+// panic.
 func (e *Error) WithCause(err error) *Error {
 	if e == nil {
 		return nil
@@ -123,9 +132,9 @@ func (e *Error) WithCause(err error) *Error {
 // Unwrap returns the underlying error created by New, Newf or Wrap, followed
 // by the cause if one was set via WithCause. Both stay visible to errors.Is
 // and errors.As, so attaching a cause never hides the wrapped error.
-// A nil *Error returns nil.
+// A nil or zero-value *Error returns nil.
 func (e *Error) Unwrap() []error {
-	if e == nil {
+	if e == nil || e.err == nil {
 		return nil
 	}
 
@@ -273,10 +282,11 @@ func equal(a, b any) bool {
 	return reflect.DeepEqual(a, b)
 }
 
-// same reports whether two errors are the identical value. Errors of an
-// uncomparable type are never the same, so the comparison cannot panic.
+// same reports whether two errors are the identical value. Errors holding an
+// uncomparable value, including comparable types with an uncomparable dynamic
+// value, are never the same, so the comparison cannot panic.
 func same(a, b error) bool {
-	if a != nil && !reflect.TypeOf(a).Comparable() {
+	if a != nil && !reflect.ValueOf(a).Comparable() {
 		return false
 	}
 

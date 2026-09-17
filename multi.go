@@ -47,14 +47,11 @@ func (e *MultiError) Add(errs ...error) {
 	}
 }
 
-// Error returns the combined error message. An empty MultiError returns an
-// empty string. A single-error MultiError returns that error's message
+// Error returns the combined error message. A nil or empty MultiError returns
+// an empty string. A single-error MultiError returns that error's message
 // unchanged. Otherwise a numbered summary is returned.
 func (e *MultiError) Error() string {
-	e.mutex.RLock()
-	defer e.mutex.RUnlock()
-
-	errs := e.errs
+	errs := e.Unwrap()
 
 	switch len(errs) {
 	case 0:
@@ -83,12 +80,6 @@ func (e *MultiError) Unwrap() []error {
 	defer e.mutex.RUnlock()
 
 	return slices.Clone(e.errs)
-}
-
-// Errors returns a copy of the collected errors. It is an alias of
-// [MultiError.Unwrap] kept for readability at call sites.
-func (e *MultiError) Errors() []error {
-	return e.Unwrap()
 }
 
 // Len returns the number of collected errors. A nil receiver reports zero.

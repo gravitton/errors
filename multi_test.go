@@ -55,16 +55,16 @@ func TestMultiErrorEmpty(t *testing.T) {
 	assert.Equal(t, errs.GoString(), "[]error(nil)")
 	assert.Equal(t, errs.Len(), 0)
 	assert.Length(t, errs.Unwrap(), 0)
-	assert.Length(t, errs.Errors(), 0)
 	assert.NoError(t, errs.ErrorOrNil())
 }
 
 func TestMultiErrorNil(t *testing.T) {
 	var errs *MultiError
 
+	assert.Equal(t, errs.Error(), "")
+	assert.Equal(t, errs.GoString(), "[]error(nil)")
 	assert.Equal(t, errs.Len(), 0)
 	assert.Length(t, errs.Unwrap(), 0)
-	assert.Length(t, errs.Errors(), 0)
 	assert.NoError(t, errs.ErrorOrNil())
 }
 
@@ -133,15 +133,10 @@ func TestMultiErrorErrorsAreCopied(t *testing.T) {
 	errs := NewMulti()
 	errs.Add(err1)
 
-	clone := errs.Errors()
-	clone[0] = errors.New("bar")
+	unwrapped := errs.Unwrap()
+	unwrapped[0] = errors.New("bar")
 
 	assert.Equal(t, errs.Unwrap(), []error{err1})
-
-	unwrapped := errs.Unwrap()
-	unwrapped[0] = errors.New("baz")
-
-	assert.Equal(t, errs.Errors(), []error{err1})
 }
 
 func TestJoinAs(t *testing.T) {

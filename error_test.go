@@ -155,6 +155,39 @@ func TestErrorsIsUncomparableError(t *testing.T) {
 	assert.ErrorIs(t, err1, err1)
 }
 
+type boxError struct {
+	value any
+}
+
+func (e boxError) Error() string {
+	return "box"
+}
+
+func TestErrorsIsUncomparableDynamicError(t *testing.T) {
+	err1 := Wrap(boxError{value: []int{1}})
+	err2 := Wrap(boxError{value: []int{1}})
+
+	assert.NotErrorIs(t, err1, err2)
+	assert.ErrorIs(t, err1, err1)
+	assert.ErrorIs(t, Wrap(boxError{value: 1}), Wrap(boxError{value: 1}))
+}
+
+func TestZeroValue(t *testing.T) {
+	var err Error
+
+	assert.Equal(t, err.Error(), "<nil>")
+	assert.Empty(t, err.Unwrap())
+	assert.NotErrorIs(t, &err, errors.New("test"))
+}
+
+func TestWithFieldsEmpty(t *testing.T) {
+	err := New("test")
+
+	assert.Same(t, err.WithFields(nil), err)
+	assert.Same(t, err.WithFields(map[string]any{}), err)
+	assert.True(t, err.WithFields(nil).data == nil)
+}
+
 func TestFieldsFunctionValues(t *testing.T) {
 	base := New("test")
 	callback := func() {}
