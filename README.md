@@ -1,4 +1,12 @@
-# Errors
+<div align="center" width="100%">
+
+<a href="https://github.com/gravitton">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/gravitton/errors/refs/heads/main/docs/images/logo-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/gravitton/errors/refs/heads/main/docs/images/logo-light.svg">
+  <img alt="Gravitton errors" src="https://raw.githubusercontent.com/gravitton/errors/refs/heads/main/docs/images/logo-light.svg" width="300">
+</picture>
+</a>
 
 [![Latest Stable Version][ico-release]][link-release]
 [![Build Status][ico-workflow]][link-workflow]
@@ -6,78 +14,110 @@
 [![Go Dev Reference][ico-go-dev-reference]][link-go-dev-reference]
 [![Software License][ico-license]][link-licence]
 
-**Multi error**: Concurrent safe representation of a list of errors as a single error.
+Structured errors with fields, causes and stack traces, plus a concurrent-safe multi error
 
-**Data error**: Additional context for error using data fields and cause (previous) error.
+<hr>
 
+</div>
+
+
+## Features
+
+- **Drop-in replacement** for the standard `errors` package – swap the import, keep every call site.
+- **Fields** – key-value context attached to an error, matched by `Is`.
+- **Causes** – a previous error attached with `WithCause`, visible to `Is` and `As`.
+- **Stack traces** captured on creation, printed with `%+v` or walked with `Frames`.
+- **Immutable** – every `With*` method returns a new error.
+- **Multi error** – concurrent-safe collection of errors as a single `error`, with `Join` on top.
 
 ## Installation
 
-```bash
+```shell
 go get github.com/gravitton/errors
 ```
 
-## Drop-in replacement
-
-This package is a drop-in replacement for the standard library `errors` package. It re-exports `Unwrap`, `Is`, `As`, and `AsType` unchanged, so you can swap the import and gain `Error` and `MultiError` without changing any existing call sites. 
-
-`New` returns an `*Error` instead of an `error`. `Error` and `MultiError` both implement `Unwrap() []error`, so `errors.Unwrap` returns nil for them; use `Is` and `As` to inspect the chain.
+## Usage
 
 ```diff
 - "errors"
 + "github.com/gravitton/errors"
 ```
 
-## Usage
+Creating and wrapping:
 
 ```go
-import (
-	"github.com/gravitton/errors"
-)
+var ErrNotFound = errors.New("not found")
 
+err := errors.Newf("user %d missing", 42)
+err = errors.Wrap(io.EOF)  // *Error with a stack trace, an *Error is returned unchanged
+```
+
+Fields and causes:
+
+```go
+err := ErrNotFound.WithField("id", 42)
+err = err.WithFields(map[string]any{"table": "users", "attempt": 3})
+err = err.WithCause(io.ErrUnexpectedEOF)
+
+err.Fields()                        // map[attempt:3 id:42 table:users], a copy
+errors.Is(err, io.ErrUnexpectedEOF) // true, the cause is in the chain
+```
+
+Sentinels match through fields, so declare them once and derive from them:
+
+```go
+errors.Is(err, ErrNotFound)                     // true
+errors.Is(err, ErrNotFound.WithField("id", 42)) // true, fields are matched too
+errors.Is(err, ErrNotFound.WithField("id", 7))  // false
+errors.Is(err, errors.New("not found"))         // false, a different error with the same text
+```
+
+Check the error before wrapping it, never after:
+
+```go
 func Process() error {
 	if err := subProcess(); err != nil {
 		return errors.Wrap(err).WithField("process", "abc")
 	}
 
-	return errors.Newf("this should not happen %s", "again")
+	return nil
 }
+```
+
+Collecting errors, sequentially or concurrently:
+
+```go
+errs := errors.NewMulti()
+errs.Add(process(1), process(2)) // nils are skipped
+
+return errs.ErrorOrNil()         // nil when nothing was added
 ```
 
 ```go
-import (
-	"sync"
+errs := errors.NewMulti()
+wg := sync.WaitGroup{}
 
-	"github.com/gravitton/errors"
-)
-
-func Process() error {
-	errs := errors.NewMulti()
-
-	errs.Add(process(1), process(2))
-
-	return errs.ErrorOrNil()
+for i := range 10 {
+	wg.Go(func() {
+		if err := process(i); err != nil {
+			errs.Add(errors.Wrap(err).WithField("process", i))
+		}
+	})
 }
 
-func ProcessConcurrent() error {
-	errs := errors.NewMulti()
-	wg := sync.WaitGroup{}
+wg.Wait()
 
-	for i := range 10 {
-		wg.Go(func() {
-			if err := process(i); err != nil {
-				errs.Add(errors.Wrap(err).WithField("process", i))
-			}
-		})
-	}
-
-	wg.Wait()
-
-	return errs.ErrorOrNil()
-}
+return errs.ErrorOrNil()
 ```
 
-Print the message alone with `%v`, or the fields, the cause and the stack trace with `%+v`:
+```go
+errors.Join(nil, nil)        // nil
+errors.Join(errA, errB)      // *MultiError, "2 errors occurred:\n errA\n errB"
+errs.Len()                   // 2
+errors.Is(errs, errA)        // true, every collected error is inspected
+```
+
+Printing, the message alone with `%v`, or the fields, the cause and the stack trace with `%+v`:
 
 ```go
 fmt.Printf("%+v", err)
@@ -88,7 +128,7 @@ fmt.Printf("%+v", err)
 //		/app/main.go:14
 ```
 
-Walk the captured stack yourself with `Frames`:
+Walking the captured stack:
 
 ```go
 for frame := range err.Frames() {
@@ -96,12 +136,42 @@ for frame := range err.Frames() {
 }
 ```
 
+Full reference: [pkg.go.dev][link-go-dev-reference].
+
+## Conventions
+
+**Standard library:** `Unwrap`, `Is`, `As`, `AsType` and `ErrUnsupported` are re-exported unchanged. `New` returns an
+`*Error` instead of an `error`. `Join` returns an `error` whose dynamic type is `*MultiError`, and with two or more
+errors its message is a numbered summary rather than the errors joined by newlines.
+
+**Unwrapping:** `Error` and `MultiError` both implement `Unwrap() []error`, so `errors.Unwrap` returns `nil` for them.
+Use `Is` and `As` to inspect the chain. An `Error` unwraps to its underlying error followed by its cause, so attaching
+a cause never hides the wrapped error.
+
+**Equality:** Two `*Error` values match under `Is` when they share the same underlying error and every field of the
+target is present in the inspected error with the same value. Only the target itself is inspected, never the errors it
+wraps. Field values of different types never match, uncomparable values fall back to `reflect.DeepEqual`, and an
+underlying error of an uncomparable type never matches.
+
+**Typed nil:** `Wrap` returns `*Error` so that fields can be chained onto it. `Wrap(nil)` therefore returns a typed nil
+pointer, which is not equal to `nil` once stored in an `error`. Chaining `WithField`, `WithFields` or `WithCause` on it
+is safe and yields `nil` again, but the result must not be returned as an `error`.
+
+**Formatting:** `%s`, `%q`, `%x` and `%v` print the message and honour width, precision and flags. `%+v` adds the
+fields sorted by key, the cause formatted with `%+v` as well, and the stack trace innermost call first. `%#v` prints
+the error in Go syntax.
+
+**Stack traces:** `New`, `Newf` and `Wrap` capture up to 32 frames above the caller. `With*` methods keep the stack of
+the error they derive from, and wrapping an `*Error` keeps its original stack.
+
+**Multi error:** `Add` skips `nil` errors, `Unwrap` returns a copy safe to modify, and all methods are safe for
+concurrent use. A single collected error reports its message unchanged. `ErrorOrNil` is the only way to obtain a
+`nil` `error` from a collection, so return it rather than the `*MultiError` itself.
 
 ## Credits
 
 - [Tomáš Novotný](https://github.com/tomas-novotny)
 - [All Contributors][link-contributors]
-
 
 ## License
 
