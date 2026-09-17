@@ -11,7 +11,9 @@ import (
 // MultiError collects multiple errors into a single error value. It satisfies
 // the Go 1.20+ multi-error unwrap interface (Unwrap() []error), so standard
 // library functions such as errors.Is and errors.As traverse all collected
-// errors. All methods are safe for concurrent use.
+// errors. All methods are safe for concurrent use. A nil *MultiError behaves
+// as an empty collection for every method except Add, which panics: use
+// NewMulti or the zero value to collect errors.
 type MultiError struct {
 	errs  []error
 	mutex sync.RWMutex
@@ -32,9 +34,10 @@ func Join(errs ...error) error {
 }
 
 // Add adds the given errors to the collection. Nil errors are silently
-// ignored, including typed nil pointers such as Wrap(nil), and so is the
-// collection itself, which would otherwise recurse forever. It is safe to
-// call Add concurrently with other Add calls.
+// ignored, including typed nil values such as Wrap(nil) or a nil slice, and
+// so is the collection itself, which would otherwise recurse forever. It is
+// safe to call Add concurrently with other Add calls. Add panics on a nil
+// receiver.
 func (e *MultiError) Add(errs ...error) {
 	if len(errs) == 0 {
 		return
@@ -52,7 +55,7 @@ func (e *MultiError) Add(errs ...error) {
 
 // Error returns the combined error message. A nil or empty MultiError returns
 // an empty string. A single-error MultiError returns that error's message
-// unchanged. Otherwise a numbered summary is returned with every message
+// unchanged, otherwise a numbered summary is returned with every message
 // indented.
 func (e *MultiError) Error() string {
 	return e.render(func(err error) string {
@@ -98,8 +101,8 @@ func (e *MultiError) ErrorOrNil() error {
 }
 
 // Format implements fmt.Formatter. The combined message is printed like a
-// plain string, so %s, %q, %x and %v honour width, precision and flags. %+v
-// formats every collected error with %+v as well, so the fields, causes and
+// plain string, so %s, %q, %x, and %v honor width, precision, and flags. %+v
+// formats every collected error with %+v as well, so the fields, causes, and
 // stack traces they carry are printed, and %#v prints the collection in Go
 // syntax.
 func (e *MultiError) Format(s fmt.State, verb rune) {
@@ -141,7 +144,7 @@ func (e *MultiError) render(text func(error) string) string {
 }
 
 // isNil reports whether err is nil, either as an interface or as a typed nil
-// pointer stored in one.
+// pointer, slice, map, function, channel, or interface stored in one.
 func isNil(err error) bool {
 	if err == nil {
 		return true
@@ -149,5 +152,10 @@ func isNil(err error) bool {
 
 	value := reflect.ValueOf(err)
 
-	return value.Kind() == reflect.Pointer && value.IsNil()
+	switch value.Kind() {
+	case reflect.Pointer, reflect.Slice, reflect.Map, reflect.Func, reflect.Chan, reflect.Interface:
+		return value.IsNil()
+	default:
+		return false
+	}
 }

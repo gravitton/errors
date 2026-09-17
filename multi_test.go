@@ -111,6 +111,7 @@ func TestMultiErrorAddNil(t *testing.T) {
 
 	var typedNil *MultiError
 	errs.Add(typedNil)
+	errs.Add(sliceError(nil))
 
 	assert.Length(t, errs.Unwrap(), 0)
 	assert.NoError(t, errs.ErrorOrNil())

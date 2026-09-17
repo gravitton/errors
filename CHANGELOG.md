@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - `ErrUnsupported` re-exported from the standard library
 - `Error.GoString` and `%#v` print the error in Go syntax
 - `MultiError.Format` implements `fmt.Formatter`: `%+v` prints every collected error with its fields, stack trace and cause
+- `Error.Causes` returns a copy of the attached causes
+- `Error.Truncated` reports whether the stack trace was cut at 32 frames; `%+v` ends such a trace with `...`
 
 ### Changed
 - `Wrap`, `Newf`, `Error.WithField`, `Error.WithFields` and `Error.WithCause` capture the current stack trace when the error they derive from has none, so an error raised from a `Sentinel` points at the place it was raised
@@ -27,10 +29,15 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - `Error.Is` matches when the target's underlying error is anywhere in the chain of the inspected error's underlying error, so fields added after `Wrap` or `Newf` still scope a sentinel
 - `Wrap` and `Newf` with `%w` inherit the fields, cause and stack trace of an `*Error` found in the chain instead of capturing a new stack
 - `%+v` prints the stack trace before the cause
-- `Error.Format` honours width, precision and flags for `%s`, `%q`, `%v` and `%x`, and prints an `*Error` cause with `%+v` including its fields and stack trace
+- `Error.Format` honors width, precision and flags for `%s`, `%q`, `%v` and `%x`, and prints an `*Error` cause with `%+v` including its fields and stack trace
 - `MultiError.Unwrap` returns a copy of the collected errors
-- `MultiError.Errors` removed in favour of `MultiError.Unwrap` (**breaking**)
-- `Error.WithFields` returns the receiver unchanged when given no fields
+- `MultiError.Errors` removed in favor of `MultiError.Unwrap` (**breaking**)
+- `Error.WithFields` returns the receiver unchanged when given no fields and the error already has a stack trace
+- `Error.WithCause` appends to the causes already attached instead of replacing them, and ignores a `nil` cause; `Error.Unwrap` returns them all (**breaking**)
+- `%+v` formats the underlying error with `%+v`, so a wrapped `MultiError` prints its members in full
+- `%#v` prints `causes` as a slice instead of a single `cause` (**breaking**)
+- `MultiError.Add` skips typed nil slices, maps, functions, channels and interfaces, not only pointers
+- `MultiError` documents that a nil receiver reads as empty while `Add` panics
 - `Error.Unwrap` returns nil for a zero-value `Error` instead of a slice holding a nil error
 
 ### Fixed

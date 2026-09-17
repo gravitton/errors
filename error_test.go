@@ -123,7 +123,7 @@ func TestSentinel(t *testing.T) {
 	assert.Equal(t, errSentinel.Error(), "sentinel")
 	assert.Empty(t, errSentinel.StackTrace())
 	assert.Empty(t, slices.Collect(errSentinel.Frames()))
-	assert.Same(t, errSentinel.WithFields(nil), errSentinel)
+	assert.NotSame(t, errSentinel.WithFields(nil), errSentinel)
 	assert.NotContains(t, fmt.Sprintf("%+v", errSentinel), "\n")
 }
 
@@ -131,7 +131,9 @@ func TestSentinelCapturesStackOnDerive(t *testing.T) {
 	derived := []*Error{
 		errSentinel.WithField("id", 1),
 		errSentinel.WithFields(map[string]any{"id": 1}),
+		errSentinel.WithFields(nil),
 		errSentinel.WithCause(io.EOF),
+		errSentinel.WithCause(nil),
 		Wrap(errSentinel),
 		Wrap(fmt.Errorf("ctx: %w", errSentinel)),
 		Newf("ctx: %w", errSentinel),
@@ -319,6 +321,32 @@ func TestNilReceiver(t *testing.T) {
 	assert.NotErrorIs(t, New("test"), err)
 }
 
+func deep(n int) *Error {
+	if n == 0 {
+		return New("deep")
+	}
+
+	return deep(n - 1)
+}
+
+func TestStackTraceTruncated(t *testing.T) {
+	shallow := New("shallow")
+
+	assert.False(t, shallow.Truncated())
+	assert.NotContains(t, fmt.Sprintf("%+v", shallow), "...")
+
+	err := deep(maxFrames)
+
+	assert.True(t, err.Truncated())
+	assert.Length(t, err.StackTrace(), maxFrames)
+	assert.Length(t, slices.Collect(err.Frames()), maxFrames)
+	assert.True(t, strings.HasSuffix(fmt.Sprintf("%+v", err), "\n\t..."))
+
+	var nilErr *Error
+
+	assert.False(t, nilErr.Truncated())
+}
+
 func TestFrames(t *testing.T) {
 	frames := slices.Collect(New("test").Frames())
 
@@ -365,6 +393,16 @@ func TestFormatNestedCause(t *testing.T) {
 	assert.Matches(t, details, `^outer\n\tlayer=0\n\t[^\n]+TestFormatNestedCause\n(\t[^\n]+\n)*caused by: inner\n\tlayer=1\n\t[^\n]+TestFormatNestedCause\n`)
 }
 
+func TestFormatDetailedUnderlying(t *testing.T) {
+	inner := New("inner").WithField("k", 1)
+	err := Wrap(Join(inner, io.EOF))
+
+	details := fmt.Sprintf("%+v", err)
+
+	assert.True(t, strings.HasPrefix(details, "2 errors occurred:\n\tinner\n\t\tk=1\n\t\tgithub.com/gravitton/errors.TestFormatDetailedUnderlying\n"))
+	assert.Contains(t, details, "\n\tEOF\n\tgithub.com/gravitton/errors.TestFormatDetailedUnderlying\n")
+}
+
 func TestFormatFlags(t *testing.T) {
 	err := New("hello")
 
@@ -378,12 +416,12 @@ func TestFormatFlags(t *testing.T) {
 func TestFormatGoSyntax(t *testing.T) {
 	err := New("test").WithField("action", "call").WithCause(io.EOF)
 
-	assert.Equal(t, fmt.Sprintf("%#v", err), `&errors.Error{err:&errors.errorString{s:"test"}, data:map[string]interface {}{"action":"call"}, cause:&errors.errorString{s:"EOF"}}`)
+	assert.Equal(t, fmt.Sprintf("%#v", err), `&errors.Error{err:&errors.errorString{s:"test"}, data:map[string]interface {}{"action":"call"}, causes:[]error{(*errors.errorString)(`+fmt.Sprintf("%p", io.EOF)+`)}}`)
 
 	var nilErr *Error
 
 	assert.Equal(t, fmt.Sprintf("%#v", nilErr), "(*errors.Error)(nil)")
-	assert.Equal(t, fmt.Sprintf("%+#v", New("test")), `&errors.Error{err:&errors.errorString{s:"test"}, data:map[string]interface {}(nil), cause:<nil>}`)
+	assert.Equal(t, fmt.Sprintf("%+#v", New("test")), `&errors.Error{err:&errors.errorString{s:"test"}, data:map[string]interface {}(nil), causes:[]error(nil)}`)
 }
 
 func TestFormatNil(t *testing.T) {
@@ -402,6 +440,44 @@ func TestWithCause(t *testing.T) {
 	assert.NotSame(t, err1, err2)
 	assert.Equal(t, err2.Unwrap(), []error{err1.err, original})
 	assert.ErrorIs(t, err2, original)
+}
+
+func TestWithCauseAccumulates(t *testing.T) {
+	err := New("test").WithCause(io.EOF).WithCause(io.ErrUnexpectedEOF)
+
+	assert.Equal(t, err.Causes(), []error{io.EOF, io.ErrUnexpectedEOF})
+	assert.Equal(t, err.Unwrap(), []error{err.err, io.EOF, io.ErrUnexpectedEOF})
+	assert.ErrorIs(t, err, io.EOF)
+	assert.ErrorIs(t, err, io.ErrUnexpectedEOF)
+
+	inherited := Newf("ctx: %w", err).WithCause(io.ErrClosedPipe)
+
+	assert.Equal(t, inherited.Causes(), []error{io.EOF, io.ErrUnexpectedEOF, io.ErrClosedPipe})
+	assert.Equal(t, err.Causes(), []error{io.EOF, io.ErrUnexpectedEOF})
+
+	details := fmt.Sprintf("%+v", err)
+
+	assert.Contains(t, details, "caused by: EOF\ncaused by: unexpected EOF")
+}
+
+func TestWithCauseNil(t *testing.T) {
+	err := New("test")
+
+	assert.Same(t, err.WithCause(nil), err)
+	assert.Empty(t, err.Causes())
+}
+
+func TestCausesAreCopied(t *testing.T) {
+	err := New("test").WithCause(io.EOF)
+
+	causes := err.Causes()
+	causes[0] = io.ErrUnexpectedEOF
+
+	assert.Equal(t, err.Causes(), []error{io.EOF})
+
+	var nilErr *Error
+
+	assert.Empty(t, nilErr.Causes())
 }
 
 func TestWithCauseKeepsWrappedError(t *testing.T) {
@@ -494,7 +570,7 @@ func (e customIs) Is(target error) bool {
 	return target == e.match
 }
 
-func TestErrorsIsHonoursIsMethod(t *testing.T) {
+func TestErrorsIsHonorsIsMethod(t *testing.T) {
 	sentinel := New("sentinel")
 	err := Wrap(customIs{match: sentinel.err}).WithField("k", 1)
 

@@ -14,7 +14,7 @@
 [![Go Dev Reference][ico-go-dev-reference]][link-go-dev-reference]
 [![Software License][ico-license]][link-licence]
 
-Structured errors with fields, causes and stack traces, plus a concurrent-safe multi error
+Structured errors with fields, causes, and stack traces, plus a concurrent-safe multi error
 
 <hr>
 
@@ -25,8 +25,8 @@ Structured errors with fields, causes and stack traces, plus a concurrent-safe m
 
 - **Drop-in replacement** for the standard `errors` package – swap the import, keep every call site.
 - **Fields** – key-value context attached to an error, matched by `Is`.
-- **Causes** – a previous error attached with `WithCause`, visible to `Is` and `As`.
-- **Stack traces** captured where the error is raised, printed with `%+v` or walked with `Frames`.
+- **Causes** – previous errors attached with `WithCause`, all visible to `Is` and `As`.
+- **Stack traces** captured where the error is raised, printed with, or walked with `Frames`.
 - **Immutable** – every `With*` method returns a new error.
 - **Multi error** – concurrent-safe collection of errors as a single `error`, with `Join` on top.
 
@@ -71,8 +71,11 @@ err := ErrNotFound.WithField("id", 42)
 err = err.WithFields(map[string]any{"table": "users", "attempt": 3})
 err = err.WithCause(io.ErrUnexpectedEOF)
 
+err = err.WithCause(io.ErrClosedPipe)
+
 err.Fields()                        // map[attempt:3 id:42 table:users], a copy
-errors.Is(err, io.ErrUnexpectedEOF) // true, the cause is in the chain
+err.Causes()                        // [unexpected EOF, io: read/write on closed pipe], a copy
+errors.Is(err, io.ErrUnexpectedEOF) // true, every cause is in the chain
 ```
 
 Sentinels match through fields, so declare them once and derive from them:
@@ -169,8 +172,9 @@ Full reference: [pkg.go.dev][link-go-dev-reference].
 errors its message is a numbered summary rather than the errors joined by newlines.
 
 **Unwrapping:** `Error` and `MultiError` both implement `Unwrap() []error`, so `errors.Unwrap` returns `nil` for them.
-Use `Is` and `As` to inspect the chain. An `Error` unwraps to its underlying error followed by its cause, so attaching
-a cause never hides the wrapped error.
+Use `Is` and `As` to inspect the chain. An `Error` unwraps to its underlying error followed by its causes in the order
+they were attached, so attaching a cause never hides the wrapped error nor an earlier cause. `WithCause(nil)` attaches
+nothing.
 
 **Equality:** Two `*Error` values match under `Is` when the underlying error of the target is found in the chain of
 the underlying error of the inspected error, and every field of the target is present in the inspected error with the
@@ -183,21 +187,23 @@ to `reflect.DeepEqual`, and an underlying error of an uncomparable type never ma
 pointer, which is not equal to `nil` once stored in an `error`. Chaining `WithField`, `WithFields` or `WithCause` on it
 is safe and yields `nil` again, but the result must not be returned as an `error`.
 
-**Formatting:** `%s`, `%q`, `%x` and `%v` print the message and honour width, precision and flags. `%+v` adds the
-fields sorted by key, the stack trace innermost call first, and the cause formatted with `%+v` as well. `%#v` prints
-the error in Go syntax. `MultiError` prints its summary the same way, and with `%+v` every collected error is
+**Formatting:** `%s`, `%q`, `%x` and `%v` print the message and honor width, precision, and flags. `%+v` prints the
+underlying error with `%+v`, so a wrapped `MultiError` shows its members in full, then the fields sorted by key, the
+stack trace innermost call first, and every cause formatted with `%+v` as well. `%#v` prints the error in Go syntax. `MultiError` prints its summary the same way, and with `%+v` every collected error is
 formatted with `%+v` in turn.
 
-**Stack traces:** `New`, `Newf` and `Wrap` capture up to 32 frames above the caller. `Sentinel` captures nothing, so
-a package-level error does not point at package initialisation; instead the first `Wrap`, `Newf`, `WithField`,
+**Stack traces:** `New`, `Newf` and `Wrap` capture up to 32 frames above the caller; when the stack is deeper the
+outermost calls are dropped, `Truncated` reports it and `%+v` ends the trace with `...`. `Sentinel` captures nothing, so
+a package-level error does not point at package initialization; instead the first `Wrap`, `Newf`, `WithField`,
 `WithFields` or `WithCause` applied to a stackless error captures the stack there, where the error is raised. `With*`
 methods otherwise keep the stack of the error they derive from. When `Wrap` or `Newf` with `%w` reach an `*Error` by
-unwrapping one error at a time, they inherit its fields, cause and stack instead of capturing a new one, so context
+unwrapping one error at a time, they inherit its fields, cause, and stack instead of capturing a new one, so context
 can be added at every layer without losing anything. An error wrapping several errors at once, such as a
 `MultiError`, is never entered, so nothing is inherited from one of its members.
 
-**Multi error:** `Add` skips `nil` errors, typed `nil` pointers and the collection itself, `Unwrap` returns a copy
-safe to modify, and all methods are safe for concurrent use. A single collected error reports its message unchanged. `ErrorOrNil` is the only way to obtain a
+**Multi error:** `Add` skips `nil` errors, typed `nil` values, and the collection itself, `Unwrap` returns a copy
+safe to modify, and all methods are safe for concurrent use. A `nil` `*MultiError` reads as an empty collection, but
+`Add` panics on it. A single collected error reports its message unchanged. `ErrorOrNil` is the only way to obtain a
 `nil` `error` from a collection, so return it rather than the `*MultiError` itself.
 
 ## Credits
