@@ -10,11 +10,15 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Added
 - `ErrUnsupported` re-exported from the standard library
 - `Error.GoString` and `%#v` print the error in Go syntax
+- `MultiError.Format` implements `fmt.Formatter`: `%+v` prints every collected error with its fields, stack trace and cause
 
 ### Changed
 - `Error.Unwrap` returns `[]error` holding both the wrapped error and the cause, so `errors.Unwrap` now returns nil for an `*Error` (**breaking**)
 - `Error.Is` matches on the underlying error identity instead of the message text, so two independent `New` calls with the same text no longer match (**breaking**)
 - `Error.Is` inspects only the target itself, no longer errors wrapped by the target (**breaking**)
+- `Error.Is` matches when the target's underlying error is anywhere in the chain of the inspected error's underlying error, so fields added after `Wrap` or `Newf` still scope a sentinel
+- `Wrap` and `Newf` with `%w` inherit the fields, cause and stack trace of an `*Error` found in the chain instead of capturing a new stack
+- `%+v` prints the stack trace before the cause
 - `Error.Format` honours width, precision and flags for `%s`, `%q`, `%v` and `%x`, and prints an `*Error` cause with `%+v` including its fields and stack trace
 - `MultiError.Unwrap` returns a copy of the collected errors
 - `MultiError.Errors` removed in favour of `MultiError.Unwrap` (**breaking**)
@@ -27,6 +31,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - `Error.Is` no longer matches a target field holding `nil` against an error that lacks the field
 - `Error.Is` no longer panics on a wrapped error of a comparable type holding an uncomparable dynamic value
 - `MultiError.Error` no longer panics on a nil receiver and no longer holds the lock while formatting collected errors
+- `Error.Is` no longer matches two zero-value `Error` values
 
 
 ## v1.3.0 (2026-08-26)(https://github.com/gravitton/errors/compare/v1.2.1...v1.3.0)

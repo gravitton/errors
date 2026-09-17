@@ -52,6 +52,17 @@ err := errors.Newf("user %d missing", 42)
 err = errors.Wrap(io.EOF)  // *Error with a stack trace, an *Error is returned unchanged
 ```
 
+Adding context keeps everything the error already carries:
+
+```go
+err := ErrNotFound.WithField("id", 42)
+err = errors.Newf("load user: %w", err)  // fields, cause and stack are inherited
+err = errors.Wrap(fmt.Errorf("handler: %w", err))
+
+err.Fields()                                    // map[id:42]
+errors.Is(err, ErrNotFound.WithField("id", 42)) // true
+```
+
 Fields and causes:
 
 ```go
@@ -117,15 +128,27 @@ errs.Len()                   // 2
 errors.Is(errs, errA)        // true, every collected error is inspected
 ```
 
-Printing, the message alone with `%v`, or the fields, the cause and the stack trace with `%+v`:
+Printing, the message alone with `%v`, or the fields, the stack trace and the cause with `%+v`:
 
 ```go
 fmt.Printf("%+v", err)
 // process failed
 //	process=abc
-// caused by: connection refused
 //	main.Process
 //		/app/main.go:14
+// caused by: connection refused
+```
+
+A multi error prints every collected error the same way:
+
+```go
+fmt.Printf("%+v", errs)
+// 2 errors occurred:
+//	process failed
+//		process=abc
+//		main.Process
+//			/app/main.go:14
+//	connection refused
 ```
 
 Walking the captured stack:
@@ -148,21 +171,23 @@ errors its message is a numbered summary rather than the errors joined by newlin
 Use `Is` and `As` to inspect the chain. An `Error` unwraps to its underlying error followed by its cause, so attaching
 a cause never hides the wrapped error.
 
-**Equality:** Two `*Error` values match under `Is` when they share the same underlying error and every field of the
-target is present in the inspected error with the same value. Only the target itself is inspected, never the errors it
-wraps. Field values of different types never match, uncomparable values fall back to `reflect.DeepEqual`, and an
-underlying error of an uncomparable type never matches.
+**Equality:** Two `*Error` values match under `Is` when the underlying error of the target is found in the chain of
+the underlying error of the inspected error, and every field of the target is present in the inspected error with the
+same value. Only the target itself is inspected, never its cause nor the errors it wraps. Field values of different
+types never match, uncomparable values fall back to `reflect.DeepEqual`, and an underlying error of an uncomparable
+type never matches.
 
 **Typed nil:** `Wrap` returns `*Error` so that fields can be chained onto it. `Wrap(nil)` therefore returns a typed nil
 pointer, which is not equal to `nil` once stored in an `error`. Chaining `WithField`, `WithFields` or `WithCause` on it
 is safe and yields `nil` again, but the result must not be returned as an `error`.
 
 **Formatting:** `%s`, `%q`, `%x` and `%v` print the message and honour width, precision and flags. `%+v` adds the
-fields sorted by key, the cause formatted with `%+v` as well, and the stack trace innermost call first. `%#v` prints
-the error in Go syntax.
+fields sorted by key, the stack trace innermost call first, and the cause formatted with `%+v` as well. `%#v` prints
+the error in Go syntax. `MultiError` formats the same way, printing every collected error with the verb it was given.
 
 **Stack traces:** `New`, `Newf` and `Wrap` capture up to 32 frames above the caller. `With*` methods keep the stack of
-the error they derive from, and wrapping an `*Error` keeps its original stack.
+the error they derive from. When `Wrap` or `Newf` with `%w` find an `*Error` in the chain, they inherit its fields,
+cause and stack instead of capturing a new one, so context can be added at every layer without losing anything.
 
 **Multi error:** `Add` skips `nil` errors, `Unwrap` returns a copy safe to modify, and all methods are safe for
 concurrent use. A single collected error reports its message unchanged. `ErrorOrNil` is the only way to obtain a

@@ -3,7 +3,6 @@ package errors
 import (
 	"errors"
 	"fmt"
-	"io"
 	"iter"
 	"maps"
 	"reflect"
@@ -30,17 +29,18 @@ func New(text string) *Error {
 	}
 }
 
-// Newf creates an Error from a formatted string and captures the current stack trace.
+// Newf creates an Error from a formatted string. When the format wraps an
+// *Error with %w, its fields, cause and stack trace are inherited, so adding
+// context to an error never hides what it already carries. Otherwise the
+// current stack trace is captured.
 func Newf(format string, v ...any) *Error {
-	return &Error{
-		err:   fmt.Errorf(format, v...),
-		stack: callers(1),
-	}
+	return derive(fmt.Errorf(format, v...))
 }
 
-// Wrap converts an error into an *Error and captures the current stack trace.
-// If err is nil, Wrap returns nil. If err is already an *Error it is returned
-// unchanged. Otherwise the error is wrapped directly.
+// Wrap converts an error into an *Error. If err is nil, Wrap returns nil. If
+// err is already an *Error it is returned unchanged. If an *Error is found in
+// the chain of err, its fields, cause and stack trace are inherited. Otherwise
+// the current stack trace is captured.
 //
 // Warning: the returned *Error nil is a typed nil pointer. When assigned to
 // or returned as an error interface it will not equal nil. Prefer checking the
@@ -54,9 +54,26 @@ func Wrap(err error) *Error {
 		return dataErr
 	}
 
+	return derive(err)
+}
+
+// derive builds an Error around err, inheriting the fields, cause and stack
+// trace of the first *Error found in its chain. When there is none the stack
+// trace is captured two frames above, at the caller of the exported function.
+func derive(err error) *Error {
+	inner, ok := AsType[*Error](err)
+	if !ok || inner == nil {
+		return &Error{
+			err:   err,
+			stack: callers(2),
+		}
+	}
+
 	return &Error{
 		err:   err,
-		stack: callers(1),
+		data:  inner.data,
+		cause: inner.cause,
+		stack: inner.stack,
 	}
 }
 
@@ -146,24 +163,26 @@ func (e *Error) Unwrap() []error {
 	return errs
 }
 
-// Is reports whether e matches target. Two *Error values match when they share
-// the same underlying error and every field present in target also appears in
-// e with the same value. WithField, WithFields and WithCause keep the underlying
-// error, so errors.Is finds a sentinel Error anywhere in a chain, optionally
-// scoped by fields. Only target itself is inspected; errors wrapped by target
-// are not.
+// Is reports whether e matches target. Two *Error values match when the
+// underlying error of target is found in the chain of the underlying error of
+// e, and every field present in target also appears in e with the same value.
+// WithField, WithFields and WithCause keep the underlying error, and Wrap and
+// Newf keep it in the chain, so errors.Is finds a sentinel Error anywhere,
+// optionally scoped by fields. Only target itself is inspected; neither its
+// cause nor the errors wrapped by it are.
 //
 // Field values of different types never match. Uncomparable values, including
 // comparable types holding an uncomparable dynamic value, are compared with
 // reflect.DeepEqual, so function fields only match when both are nil.
-// Underlying errors of an uncomparable type never match.
+// Underlying errors of an uncomparable type never match, and neither does a
+// zero-value Error.
 func (e *Error) Is(target error) bool {
 	err, ok := target.(*Error)
 	if !ok || e == nil || err == nil {
 		return false
 	}
 
-	if !same(e.err, err.err) {
+	if !contains(e.err, err.err) {
 		return false
 	}
 
@@ -179,17 +198,10 @@ func (e *Error) Is(target error) bool {
 
 // Format implements fmt.Formatter. The message is printed like a plain string,
 // so %s, %q, %x and %v honour width, precision and flags. %+v additionally
-// prints the fields, the cause chain and the stack trace, formatting the cause
+// prints the fields, the stack trace and the cause chain, formatting the cause
 // with %+v as well, and %#v prints the error in Go syntax.
 func (e *Error) Format(s fmt.State, verb rune) {
-	switch {
-	case verb == 'v' && s.Flag('+'):
-		io.WriteString(s, e.details())
-	case verb == 'v' && s.Flag('#'):
-		io.WriteString(s, e.GoString())
-	default:
-		fmt.Fprintf(s, fmt.FormatString(s, verb), e.Error())
-	}
+	format(e, s, verb)
 }
 
 // GoString implements fmt.GoStringer for debugging output.
@@ -229,8 +241,8 @@ func (e *Error) Frames() iter.Seq[runtime.Frame] {
 	}
 }
 
-// details renders the message together with the fields, the cause and the
-// stack trace, as printed by the %+v verb.
+// details renders the message together with the fields, the stack trace and
+// the cause, as printed by the %+v verb.
 func (e *Error) details() string {
 	if e == nil {
 		return e.Error()
@@ -243,12 +255,12 @@ func (e *Error) details() string {
 		fmt.Fprintf(b, "\n\t%s=%v", k, e.data[k])
 	}
 
-	if e.cause != nil {
-		fmt.Fprintf(b, "\ncaused by: %+v", e.cause)
-	}
-
 	for frame := range e.Frames() {
 		fmt.Fprintf(b, "\n\t%s\n\t\t%s:%d", frame.Function, frame.File, frame.Line)
+	}
+
+	if e.cause != nil {
+		fmt.Fprintf(b, "\ncaused by: %+v", e.cause)
 	}
 
 	return b.String()
@@ -282,13 +294,13 @@ func equal(a, b any) bool {
 	return reflect.DeepEqual(a, b)
 }
 
-// same reports whether two errors are the identical value. Errors holding an
-// uncomparable value, including comparable types with an uncomparable dynamic
-// value, are never the same, so the comparison cannot panic.
-func same(a, b error) bool {
-	if a != nil && !reflect.ValueOf(a).Comparable() {
+// contains reports whether target is found in the chain of err. A nil target
+// or one holding an uncomparable value, including a comparable type with an
+// uncomparable dynamic value, is never found, so the comparison cannot panic.
+func contains(err, target error) bool {
+	if target == nil || !reflect.ValueOf(target).Comparable() {
 		return false
 	}
 
-	return a == b
+	return errors.Is(err, target)
 }

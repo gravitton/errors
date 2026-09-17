@@ -58,6 +58,46 @@ func TestWrapError(t *testing.T) {
 	assert.Same(t, err, original)
 }
 
+func TestWrapInherits(t *testing.T) {
+	inner := New("inner").WithField("id", 42).WithCause(io.EOF)
+	outer := Wrap(fmt.Errorf("ctx: %w", inner))
+
+	assert.Equal(t, outer.Error(), "ctx: inner")
+	assert.Equal(t, outer.Fields(), map[string]any{"id": 42})
+	assert.Equal(t, outer.StackTrace(), inner.StackTrace())
+	assert.Equal(t, outer.Unwrap()[1], io.EOF)
+	assert.ErrorIs(t, outer, inner)
+	assert.ErrorIs(t, outer, inner.WithField("id", 42))
+	assert.NotErrorIs(t, outer, inner.WithField("id", 7))
+	assert.ErrorIs(t, outer, io.EOF)
+
+	found, ok := AsType[*Error](outer)
+
+	assert.True(t, ok)
+	assert.Same(t, found, outer)
+}
+
+func TestWrapInheritsTypedNil(t *testing.T) {
+	var inner *Error
+	outer := Wrap(fmt.Errorf("ctx: %w", inner))
+
+	assert.Equal(t, outer.Error(), "ctx: <nil>")
+	assert.Empty(t, outer.Fields())
+	assert.NotEmpty(t, outer.StackTrace())
+}
+
+func TestNewfInherits(t *testing.T) {
+	inner := New("inner").WithField("id", 42)
+	outer := Newf("ctx %d: %w", 1, inner).WithField("attempt", 3)
+
+	assert.Equal(t, outer.Error(), "ctx 1: inner")
+	assert.Equal(t, outer.Fields(), map[string]any{"id": 42, "attempt": 3})
+	assert.Equal(t, outer.StackTrace(), inner.StackTrace())
+	assert.ErrorIs(t, outer, inner.WithField("id", 42))
+	assert.ErrorIs(t, outer, inner.WithField("attempt", 3))
+	assert.NotErrorIs(t, inner, outer)
+}
+
 func TestStackTrace(t *testing.T) {
 	err1 := New("test")
 	err2 := Newf("test %d", 1)
@@ -178,6 +218,8 @@ func TestZeroValue(t *testing.T) {
 	assert.Equal(t, err.Error(), "<nil>")
 	assert.Empty(t, err.Unwrap())
 	assert.NotErrorIs(t, &err, errors.New("test"))
+	assert.NotErrorIs(t, &err, &Error{})
+	assert.NotErrorIs(t, New("test"), &err)
 }
 
 func TestWithFieldsEmpty(t *testing.T) {
@@ -250,13 +292,14 @@ func TestFormat(t *testing.T) {
 
 func TestFormatNestedCause(t *testing.T) {
 	inner := New("inner").WithField("layer", 1)
-	outer := New("outer").WithCause(inner)
+	outer := New("outer").WithField("layer", 0).WithCause(inner)
 
 	details := fmt.Sprintf("%+v", outer)
 
 	assert.Contains(t, details, "caused by: inner")
 	assert.Contains(t, details, "layer=1")
 	assert.Equal(t, strings.Count(details, "github.com/gravitton/errors.TestFormatNestedCause"), 2)
+	assert.Matches(t, details, `^outer\n\tlayer=0\n\t[^\n]+TestFormatNestedCause\n(\t[^\n]+\n)*caused by: inner\n\tlayer=1\n\t[^\n]+TestFormatNestedCause\n`)
 }
 
 func TestFormatFlags(t *testing.T) {
@@ -361,5 +404,7 @@ func TestErrorsIsInspectsOnlyTarget(t *testing.T) {
 	assert.NotErrorIs(t, sentinel, fmt.Errorf("wrapped: %w", sentinel))
 	assert.NotErrorIs(t, sentinel, Join(errors.New("other"), sentinel))
 	assert.NotErrorIs(t, sentinel, New("other").WithCause(sentinel))
+	assert.NotErrorIs(t, sentinel, Newf("wrapped: %w", sentinel))
 	assert.ErrorIs(t, New("other").WithCause(sentinel), sentinel)
+	assert.ErrorIs(t, sentinel, sentinel.WithCause(io.EOF))
 }

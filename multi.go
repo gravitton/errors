@@ -105,7 +105,37 @@ func (e *MultiError) ErrorOrNil() error {
 	return e
 }
 
+// Format implements fmt.Formatter. The combined message is printed like a
+// plain string, so %s, %q, %x and %v honour width, precision and flags. %+v
+// formats every collected error with %+v as well, so the fields, causes and
+// stack traces they carry are printed, and %#v prints the collection in Go
+// syntax.
+func (e *MultiError) Format(s fmt.State, verb rune) {
+	format(e, s, verb)
+}
+
 // GoString implements fmt.GoStringer for debugging output.
 func (e *MultiError) GoString() string {
 	return fmt.Sprintf("%#v", e.Unwrap())
+}
+
+// details renders the collected errors with their details, as printed by the
+// %+v verb. It mirrors Error: empty for no errors, the sole error unchanged,
+// and otherwise a numbered summary with every error indented.
+func (e *MultiError) details() string {
+	errs := e.Unwrap()
+
+	switch len(errs) {
+	case 0:
+		return ""
+	case 1:
+		return fmt.Sprintf("%+v", errs[0])
+	default:
+		msg := make([]string, len(errs))
+		for i, err := range errs {
+			msg[i] = indent(fmt.Sprintf("%+v", err))
+		}
+
+		return fmt.Sprintf("%d errors occurred:\n%s", len(errs), strings.Join(msg, "\n"))
+	}
 }

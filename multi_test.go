@@ -2,6 +2,9 @@ package errors
 
 import (
 	"errors"
+	"fmt"
+	"io"
+	"strings"
 	"sync"
 	"testing"
 
@@ -137,6 +140,36 @@ func TestMultiErrorErrorsAreCopied(t *testing.T) {
 	unwrapped[0] = errors.New("bar")
 
 	assert.Equal(t, errs.Unwrap(), []error{err1})
+}
+
+func TestMultiErrorFormat(t *testing.T) {
+	err1 := New("foo").WithField("k", 1)
+	err2 := io.EOF
+	errs := Join(err1, err2)
+
+	assert.Equal(t, fmt.Sprintf("%s", errs), "2 errors occurred:\n foo\n EOF")
+	assert.Equal(t, fmt.Sprintf("%q", Join(err2)), `"EOF"`)
+	assert.Equal(t, fmt.Sprintf("[%5s]", Join(err2)), "[  EOF]")
+	assert.Equal(t, fmt.Sprintf("%#v", Join(err2)), fmt.Sprintf("%#v", []error{err2}))
+
+	details := fmt.Sprintf("%+v", errs)
+
+	assert.True(t, strings.HasPrefix(details, "2 errors occurred:\n\tfoo\n\t\tk=1\n\t\tgithub.com/gravitton/errors.TestMultiErrorFormat\n"))
+	assert.True(t, strings.HasSuffix(details, "\n\tEOF"))
+}
+
+func TestMultiErrorFormatSingle(t *testing.T) {
+	err := New("foo").WithField("k", 1)
+
+	assert.Equal(t, fmt.Sprintf("%+v", Join(err)), fmt.Sprintf("%+v", err))
+}
+
+func TestMultiErrorFormatEmpty(t *testing.T) {
+	var errs *MultiError
+
+	assert.Equal(t, fmt.Sprintf("%+v", errs), "")
+	assert.Equal(t, fmt.Sprintf("%+v", NewMulti()), "")
+	assert.Equal(t, fmt.Sprintf("%v", NewMulti()), "")
 }
 
 func TestJoinAs(t *testing.T) {
