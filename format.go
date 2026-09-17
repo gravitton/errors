@@ -3,7 +3,6 @@ package errors
 import (
 	"fmt"
 	"io"
-	"strings"
 )
 
 // detailed is an error that can render itself with the fields, causes, and
@@ -26,9 +25,4 @@ func format(e detailed, s fmt.State, verb rune) {
 	default:
 		fmt.Fprintf(s, fmt.FormatString(s, verb), e.Error())
 	}
-}
-
-// indent prefixes every line of text with a tab.
-func indent(text string) string {
-	return "\t" + strings.ReplaceAll(text, "\n", "\n\t")
 }

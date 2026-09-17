@@ -192,8 +192,9 @@ underlying error with `%+v`, so a wrapped `MultiError` shows its members in full
 stack trace innermost call first, and every cause formatted with `%+v` as well. `%#v` prints the error in Go syntax. `MultiError` prints its summary the same way, and with `%+v` every collected error is
 formatted with `%+v` in turn.
 
-**Stack traces:** `New`, `Newf` and `Wrap` capture up to 32 frames above the caller; when the stack is deeper the
-outermost calls are dropped, `Truncated` reports it and `%+v` ends the trace with `...`. `Sentinel` captures nothing, so
+**Stack traces:** `New`, `Newf` and `Wrap` capture up to 32 program counters above the caller; when the stack is deeper
+the outermost calls are dropped, `Truncated` reports it and `%+v` ends the trace with `...`. `StackTrace` returns a copy,
+and `Frames` may yield more frames than program counters when calls were inlined. `Sentinel` captures nothing, so
 a package-level error does not point at package initialization; instead the first `Wrap`, `Newf`, `WithField`,
 `WithFields` or `WithCause` applied to a stackless error captures the stack there, where the error is raised. `With*`
 methods otherwise keep the stack of the error they derive from. When `Wrap` or `Newf` with `%w` reach an `*Error` by

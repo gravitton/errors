@@ -35,9 +35,10 @@ func Join(errs ...error) error {
 
 // Add adds the given errors to the collection. Nil errors are silently
 // ignored, including typed nil values such as Wrap(nil) or a nil slice, and
-// so is the collection itself, which would otherwise recurse forever. It is
-// safe to call Add concurrently with other Add calls. Add panics on a nil
-// receiver.
+// so is the collection itself. Only that direct cycle is guarded against; a
+// collection reachable through another error still recurses forever when
+// rendered, as with errors.Join. It is safe to call Add concurrently with
+// other Add calls. Add panics on a nil receiver.
 func (e *MultiError) Add(errs ...error) {
 	if len(errs) == 0 {
 		return
@@ -143,8 +144,13 @@ func (e *MultiError) render(text func(error) string) string {
 	}
 }
 
+// indent prefixes every line of text with a tab.
+func indent(text string) string {
+	return "\t" + strings.ReplaceAll(text, "\n", "\n\t")
+}
+
 // isNil reports whether err is nil, either as an interface or as a typed nil
-// pointer, slice, map, function, channel, or interface stored in one.
+// pointer, slice, map, function, or channel stored in one.
 func isNil(err error) bool {
 	if err == nil {
 		return true
@@ -153,7 +159,7 @@ func isNil(err error) bool {
 	value := reflect.ValueOf(err)
 
 	switch value.Kind() {
-	case reflect.Pointer, reflect.Slice, reflect.Map, reflect.Func, reflect.Chan, reflect.Interface:
+	case reflect.Pointer, reflect.Slice, reflect.Map, reflect.Func, reflect.Chan:
 		return value.IsNil()
 	default:
 		return false

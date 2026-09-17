@@ -39,8 +39,11 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - `MultiError.Add` skips typed nil slices, maps, functions, channels and interfaces, not only pointers
 - `MultiError` documents that a nil receiver reads as empty while `Add` panics
 - `Error.Unwrap` returns nil for a zero-value `Error` instead of a slice holding a nil error
+- `Error.StackTrace` returns a copy of the captured program counters, so callers cannot alter the error
+- `MultiError.Add` documents that only the collection itself is skipped, not a cycle through another error
 
 ### Fixed
+- `Error.Is` no longer panics when a typed nil `*Error` is reached in the chain of the underlying error
 - `Error.WithCause` no longer hides the wrapped error from `errors.Is` and `errors.As`
 - `Error.Is` no longer panics on uncomparable values, whether a field holding a comparable type with an uncomparable dynamic value or a wrapped error of an uncomparable type; such errors never match
 - `Error.Is` no longer matches a target field holding `nil` against an error that lacks the field

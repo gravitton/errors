@@ -84,12 +84,11 @@ func derive(err error) *Error {
 		}
 	}
 
-	return &Error{
-		err:    err,
-		data:   inner.data,
-		causes: inner.causes,
-		stack:  inner.trace(2),
-	}
+	derived := *inner
+	derived.err = err
+	derived.stack = inner.trace(2)
+
+	return &derived
 }
 
 // ancestor returns the first *Error reached by repeatedly unwrapping err with
@@ -164,12 +163,11 @@ func (e *Error) withFields(values map[string]any, skip int) *Error {
 	maps.Copy(data, e.data)
 	maps.Copy(data, values)
 
-	return &Error{
-		err:    e.err,
-		data:   data,
-		causes: e.causes,
-		stack:  e.trace(skip + 1),
-	}
+	derived := *e
+	derived.data = data
+	derived.stack = e.trace(skip + 1)
+
+	return &derived
 }
 
 // WithCause returns a copy of the error with the given cause attached after
@@ -187,16 +185,11 @@ func (e *Error) WithCause(err error) *Error {
 		return e.traced(1)
 	}
 
-	causes := make([]error, len(e.causes)+1)
-	copy(causes, e.causes)
-	causes[len(e.causes)] = err
+	derived := *e
+	derived.causes = append(slices.Clip(e.causes), err)
+	derived.stack = e.trace(1)
 
-	return &Error{
-		err:    e.err,
-		data:   e.data,
-		causes: causes,
-		stack:  e.trace(1),
-	}
+	return &derived
 }
 
 // Causes returns a copy of the causes attached with WithCause, in the order
@@ -209,7 +202,7 @@ func (e *Error) Causes() []error {
 	return slices.Clone(e.causes)
 }
 
-// Unwrap returns the underlying error created by New, Newf or Wrap, followed
+// Unwrap returns the underlying error created by New, Sentinel, Newf or Wrap, followed
 // by the causes attached with WithCause. All stay visible to errors.Is and
 // errors.As, so attaching a cause never hides the wrapped error.
 // A nil or zero-value *Error returns nil.
@@ -275,34 +268,35 @@ func (e *Error) GoString() string {
 	return fmt.Sprintf("&errors.Error{err:%#v, data:%#v, causes:%#v}", e.err, e.data, e.causes)
 }
 
-// StackTrace returns the program counters captured when the error was created,
-// innermost call first and at most 32 of them. See [Error.Frames] for the
-// resolved call frames and [Error.Truncated] to learn whether deeper frames
-// were dropped.
+// StackTrace returns a copy of the program counters captured when the error
+// was created, innermost call first and at most 32 of them. See [Error.Frames]
+// for the resolved call frames and [Error.Truncated] to learn whether deeper
+// calls were dropped.
 func (e *Error) StackTrace() []uintptr {
 	if e == nil {
 		return nil
 	}
 
-	return e.stack[:min(len(e.stack), maxFrames)]
+	return slices.Clone(e.stackTrace())
 }
 
-// Truncated reports whether the stack was deeper than the 32 frames kept, so
-// the outermost calls are missing from StackTrace and Frames.
+// Truncated reports whether the stack was deeper than the 32 program counters
+// kept, so the outermost calls are missing from StackTrace and Frames.
 func (e *Error) Truncated() bool {
 	return e != nil && len(e.stack) > maxFrames
 }
 
 // Frames resolves the captured stack trace into call frames, innermost call
-// first. The sequence is empty when no stack was captured.
+// first. A program counter inside an inlined call resolves to several frames,
+// so there may be more frames than program counters. The sequence is empty
+// when no stack was captured.
 func (e *Error) Frames() iter.Seq[runtime.Frame] {
 	return func(yield func(runtime.Frame) bool) {
-		stack := e.StackTrace()
-		if len(stack) == 0 {
+		if e == nil || len(e.stack) == 0 {
 			return
 		}
 
-		frames := runtime.CallersFrames(stack)
+		frames := runtime.CallersFrames(e.stackTrace())
 		for {
 			frame, more := frames.Next()
 			if !yield(frame) || !more {
@@ -349,12 +343,16 @@ func (e *Error) traced(skip int) *Error {
 		return e
 	}
 
-	return &Error{
-		err:    e.err,
-		data:   e.data,
-		causes: e.causes,
-		stack:  callers(skip + 1),
-	}
+	derived := *e
+	derived.stack = callers(skip + 1)
+
+	return &derived
+}
+
+// stackTrace returns the kept program counters without the extra one captured
+// to detect truncation.
+func (e *Error) stackTrace() []uintptr {
+	return e.stack[:min(len(e.stack), maxFrames)]
 }
 
 // trace returns the stack trace of e, or captures the current one skip frames
@@ -410,7 +408,8 @@ func contains(err, target error) bool {
 }
 
 // within walks the chain of err looking for a target, honoring Is methods and
-// both Unwrap forms, and stepping over the cause of every *Error.
+// both Unwrap forms, and stepping over the cause of every *Error. A typed nil
+// *Error ends the chain.
 func within(err, target error) bool {
 	if err == nil {
 		return false
@@ -421,7 +420,7 @@ func within(err, target error) bool {
 	}
 
 	if e, ok := err.(*Error); ok {
-		return within(e.err, target)
+		return e != nil && within(e.err, target)
 	}
 
 	if matcher, ok := err.(interface{ Is(error) bool }); ok && matcher.Is(target) {

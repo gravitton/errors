@@ -103,6 +103,19 @@ func TestWrapInheritsTypedNil(t *testing.T) {
 	assert.Equal(t, outer.Error(), "ctx: <nil>")
 	assert.Empty(t, outer.Fields())
 	assert.NotEmpty(t, outer.StackTrace())
+	assert.NotErrorIs(t, outer, New("other"))
+	assert.ErrorIs(t, outer, outer)
+	assert.ErrorIs(t, outer.WithCause(io.EOF), io.EOF)
+}
+
+func TestStackTraceIsCopied(t *testing.T) {
+	err := New("test")
+
+	stack := err.StackTrace()
+	stack[0] = 0
+
+	assert.NotEqual(t, err.StackTrace()[0], uintptr(0))
+	assert.Equal(t, err.StackTrace(), slices.Clone(err.StackTrace()))
 }
 
 func TestNewfInherits(t *testing.T) {
