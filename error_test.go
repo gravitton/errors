@@ -41,6 +41,12 @@ func TestWrapNil(t *testing.T) {
 
 	assert.NoError(t, err2)
 	assert.False(t, err2 == nil) // typed *Error(nil) nil pointer
+
+	var nilMulti *MultiError
+
+	assert.True(t, Wrap(nilMulti) == nil)
+	assert.True(t, Wrap(sliceError(nil)) == nil)
+	assert.True(t, Wrap(err1) == nil)
 }
 
 func TestWrapStdError(t *testing.T) {
@@ -416,6 +422,16 @@ func TestFormatDetailedUnderlying(t *testing.T) {
 	assert.Contains(t, details, "\n\tEOF\n\tgithub.com/gravitton/errors.TestFormatDetailedUnderlying\n")
 }
 
+func TestFormatMultiWrapPrintsMessageOnly(t *testing.T) {
+	a := New("a").WithField("k", 1)
+	err := Wrap(fmt.Errorf("%w and %w", a, io.EOF))
+
+	details := fmt.Sprintf("%+v", err)
+
+	assert.True(t, strings.HasPrefix(details, "a and EOF\n\tgithub.com/gravitton/errors.TestFormatMultiWrapPrintsMessageOnly\n"))
+	assert.NotContains(t, details, "k=1")
+}
+
 func TestFormatFlags(t *testing.T) {
 	err := New("hello")
 
@@ -569,6 +585,16 @@ func TestErrorsIsFieldsScopeDerivedOnly(t *testing.T) {
 
 	assert.ErrorIs(t, Newf("ctx: %w", sentinel).WithField("k", 1), target)
 	assert.ErrorIs(t, New("other").WithCause(target), target)
+}
+
+func TestErrorsIsFieldsNeverNarrow(t *testing.T) {
+	inner := New("inner").WithField("k", 1)
+	outer := Newf("ctx: %w", inner).WithField("k", 2)
+
+	assert.Equal(t, outer.Fields(), map[string]any{"k": 2})
+	assert.ErrorIs(t, outer, inner.WithField("k", 2))
+	assert.ErrorIs(t, outer, inner.WithField("k", 1))
+	assert.NotErrorIs(t, outer, inner.WithField("k", 3))
 }
 
 type customIs struct {

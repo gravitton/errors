@@ -51,8 +51,9 @@ func Newf(format string, v ...any) *Error {
 	return derive(fmt.Errorf(format, v...))
 }
 
-// Wrap converts an error into an *Error. If err is nil, Wrap returns nil. If
-// err is already an *Error it is returned unchanged, or as a copy with the
+// Wrap converts an error into an *Error. If err is nil, including a typed nil
+// such as a nil *MultiError, Wrap returns nil. If err is already an *Error it
+// is returned unchanged, or as a copy with the
 // current stack trace when it has none. If an *Error is found by repeatedly
 // unwrapping err, its fields, causes, and stack trace are inherited. Otherwise
 // the current stack trace is captured.
@@ -61,7 +62,7 @@ func Newf(format string, v ...any) *Error {
 // or returned as an error interface it will not equal nil. Prefer checking the
 // error before passing it to Wrap rather than checking the result afterwards.
 func Wrap(err error) *Error {
-	if err == nil {
+	if isNil(err) {
 		return nil
 	}
 
@@ -230,6 +231,11 @@ func (e *Error) Unwrap() []error {
 // reflect.DeepEqual, so function fields only match when both are nil.
 // Underlying errors of an uncomparable type never match, and neither does a
 // zero-value Error.
+//
+// Fields can widen a match but never narrow one: errors.Is keeps unwrapping
+// into the chain, where the error e was derived from still carries the values
+// it had at that point. An error that overrides a field therefore matches a
+// target holding either the new or the previous value.
 func (e *Error) Is(target error) bool {
 	err, ok := target.(*Error)
 	if !ok || e == nil || err == nil {
@@ -254,7 +260,8 @@ func (e *Error) Is(target error) bool {
 // so %s, %q, %x, and %v honor width, precision, and flags. %+v additionally
 // prints the fields, the stack trace, and the causes, formatting the underlying
 // error and every cause with %+v as well, and %#v prints the error in Go
-// syntax.
+// syntax. Errors reached only through a wrapper without a Format method, such
+// as one from fmt.Errorf with several %w verbs, print their message alone.
 func (e *Error) Format(s fmt.State, verb rune) {
 	format(e, s, verb)
 }
@@ -373,6 +380,23 @@ func callers(skip int) []uintptr {
 	n := runtime.Callers(skip+2, stack)
 
 	return stack[:n]
+}
+
+// isNil reports whether err is nil, either as an interface or as a typed nil
+// pointer, slice, map, function, or channel stored in one.
+func isNil(err error) bool {
+	if err == nil {
+		return true
+	}
+
+	value := reflect.ValueOf(err)
+
+	switch value.Kind() {
+	case reflect.Pointer, reflect.Slice, reflect.Map, reflect.Func, reflect.Chan:
+		return value.IsNil()
+	default:
+		return false
+	}
 }
 
 // equal compares two field values without panicking on uncomparable types,

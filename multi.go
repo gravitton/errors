@@ -2,7 +2,6 @@ package errors
 
 import (
 	"fmt"
-	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -112,7 +111,11 @@ func (e *MultiError) Format(s fmt.State, verb rune) {
 
 // GoString implements fmt.GoStringer for debugging output.
 func (e *MultiError) GoString() string {
-	return fmt.Sprintf("%#v", e.Unwrap())
+	if e == nil {
+		return "(*errors.MultiError)(nil)"
+	}
+
+	return fmt.Sprintf("&errors.MultiError{errs:%#v}", e.Unwrap())
 }
 
 // details renders the collected errors with their details, as printed by the
@@ -147,21 +150,4 @@ func (e *MultiError) render(text func(error) string) string {
 // indent prefixes every line of text with a tab.
 func indent(text string) string {
 	return "\t" + strings.ReplaceAll(text, "\n", "\n\t")
-}
-
-// isNil reports whether err is nil, either as an interface or as a typed nil
-// pointer, slice, map, function, or channel stored in one.
-func isNil(err error) bool {
-	if err == nil {
-		return true
-	}
-
-	value := reflect.ValueOf(err)
-
-	switch value.Kind() {
-	case reflect.Pointer, reflect.Slice, reflect.Map, reflect.Func, reflect.Chan:
-		return value.IsNil()
-	default:
-		return false
-	}
 }

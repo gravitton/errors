@@ -36,11 +36,16 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - `Error.WithCause` appends to the causes already attached instead of replacing them, and ignores a `nil` cause; `Error.Unwrap` returns them all (**breaking**)
 - `%+v` formats the underlying error with `%+v`, so a wrapped `MultiError` prints its members in full
 - `%#v` prints `causes` as a slice instead of a single `cause` (**breaking**)
-- `MultiError.Add` skips typed nil slices, maps, functions, channels and interfaces, not only pointers
+- `MultiError.Add` skips typed nil slices, maps, functions and channels, not only pointers
 - `MultiError` documents that a nil receiver reads as empty while `Add` panics
 - `Error.Unwrap` returns nil for a zero-value `Error` instead of a slice holding a nil error
 - `Error.StackTrace` returns a copy of the captured program counters, so callers cannot alter the error
 - `MultiError.Add` documents that only the collection itself is skipped, not a cycle through another error
+- `Wrap` returns nil for a typed nil argument, such as a nil `*MultiError`, the same as `MultiError.Add` skips it
+- `MultiError.GoString` and `%#v` print `&errors.MultiError{errs:...}` like `Error.GoString`, and `(*errors.MultiError)(nil)` for a nil receiver (**breaking**)
+- Minimum Go version lowered to 1.26, the first release with `errors.AsType`
+- `Error.Is` documents that fields can widen a match but never narrow one, since `errors.Is` still unwraps into the errors an `*Error` was derived from
+- `%+v` documents that an error reached only through a wrapper without a `Format` method, such as a multi-`%w` `fmt.Errorf`, prints its message alone
 
 ### Fixed
 - `Error.Is` no longer panics when a typed nil `*Error` is reached in the chain of the underlying error

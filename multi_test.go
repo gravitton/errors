@@ -55,7 +55,7 @@ func TestMultiErrorEmpty(t *testing.T) {
 	errs := NewMulti()
 
 	assert.Equal(t, errs.Error(), "")
-	assert.Equal(t, errs.GoString(), "[]error(nil)")
+	assert.Equal(t, errs.GoString(), "&errors.MultiError{errs:[]error(nil)}")
 	assert.Equal(t, errs.Len(), 0)
 	assert.Length(t, errs.Unwrap(), 0)
 	assert.NoError(t, errs.ErrorOrNil())
@@ -65,7 +65,7 @@ func TestMultiErrorNil(t *testing.T) {
 	var errs *MultiError
 
 	assert.Equal(t, errs.Error(), "")
-	assert.Equal(t, errs.GoString(), "[]error(nil)")
+	assert.Equal(t, errs.GoString(), "(*errors.MultiError)(nil)")
 	assert.Equal(t, errs.Len(), 0)
 	assert.Length(t, errs.Unwrap(), 0)
 	assert.NoError(t, errs.ErrorOrNil())
@@ -78,7 +78,7 @@ func TestMultiErrorAddError(t *testing.T) {
 	errs.Add(err1)
 
 	assert.Equal(t, errs.Error(), "foo")
-	assert.Matches(t, errs.GoString(), `^\[\]error\{(\(\*errors.errorString\)\((0x)?[0-9a-f]+\)(, )?){1}\}$`)
+	assert.Matches(t, errs.GoString(), `^&errors\.MultiError\{errs:\[\]error\{(\(\*errors\.errorString\)\((0x)?[0-9a-f]+\)(, )?){1}\}\}$`)
 	assert.Length(t, errs.Unwrap(), 1)
 	assert.Equal(t, errs.Unwrap(), []error{err1})
 	assert.Error(t, errs.ErrorOrNil())
@@ -94,7 +94,7 @@ func TestMultiErrorAddErrors(t *testing.T) {
 
 	assert.Equal(t, errs.Len(), 2)
 	assert.Equal(t, errs.Error(), "2 errors occurred:\n\tfoo\n\tbar")
-	assert.Matches(t, errs.GoString(), `^\[\]error\{(\(\*errors.errorString\)\((0x)?[0-9a-f]+\)(, )?){2}\}$`)
+	assert.Matches(t, errs.GoString(), `^&errors\.MultiError\{errs:\[\]error\{(\(\*errors\.errorString\)\((0x)?[0-9a-f]+\)(, )?){2}\}\}$`)
 	assert.Length(t, errs.Unwrap(), 2)
 	assert.Equal(t, errs.Unwrap(), []error{err1, err2})
 	assert.Error(t, errs.ErrorOrNil())
@@ -170,7 +170,7 @@ func TestMultiErrorFormat(t *testing.T) {
 	assert.Equal(t, fmt.Sprintf("%s", errs), "2 errors occurred:\n\tfoo\n\tEOF")
 	assert.Equal(t, fmt.Sprintf("%q", Join(err2)), `"EOF"`)
 	assert.Equal(t, fmt.Sprintf("[%5s]", Join(err2)), "[  EOF]")
-	assert.Equal(t, fmt.Sprintf("%#v", Join(err2)), fmt.Sprintf("%#v", []error{err2}))
+	assert.Equal(t, fmt.Sprintf("%#v", Join(err2)), fmt.Sprintf("&errors.MultiError{errs:%#v}", []error{err2}))
 
 	details := fmt.Sprintf("%+v", errs)
 

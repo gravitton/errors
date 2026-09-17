@@ -26,7 +26,7 @@ Structured errors with fields, causes, and stack traces, plus a concurrent-safe 
 - **Drop-in replacement** for the standard `errors` package – swap the import, keep every call site.
 - **Fields** – key-value context attached to an error, matched by `Is`.
 - **Causes** – previous errors attached with `WithCause`, all visible to `Is` and `As`.
-- **Stack traces** captured where the error is raised, printed with, or walked with `Frames`.
+- **Stack traces** captured where the error is raised, printed with `%+v`, or walked with `Frames`.
 - **Immutable** – every `With*` method returns a new error.
 - **Multi error** – concurrent-safe collection of errors as a single `error`, with `Join` on top.
 
@@ -181,16 +181,22 @@ the underlying error of the inspected error, and every field of the target is pr
 same value. That chain never enters a cause, so fields only scope the errors they were added to or derived from; a
 sentinel attached with `WithCause` is still found, but only with its own fields. Only the target itself is inspected,
 never its cause nor the errors it wraps. Field values of different types never match, uncomparable values fall back
-to `reflect.DeepEqual`, and an underlying error of an uncomparable type never matches.
+to `reflect.DeepEqual`, and an underlying error of an uncomparable type never matches. Fields can widen a match but
+never narrow one: `errors.Is` keeps unwrapping into the errors the inspected one was derived from, and those still
+carry the values they had at the time, so an error that overrides a field matches a target holding either the new or
+the previous value.
 
 **Typed nil:** `Wrap` returns `*Error` so that fields can be chained onto it. `Wrap(nil)` therefore returns a typed nil
-pointer, which is not equal to `nil` once stored in an `error`. Chaining `WithField`, `WithFields` or `WithCause` on it
+pointer, which is not equal to `nil` once stored in an `error`. `Wrap` treats a typed nil argument, such as a nil
+`*MultiError`, the same as `nil`. Chaining `WithField`, `WithFields` or `WithCause` on it
 is safe and yields `nil` again, but the result must not be returned as an `error`.
 
 **Formatting:** `%s`, `%q`, `%x` and `%v` print the message and honor width, precision, and flags. `%+v` prints the
 underlying error with `%+v`, so a wrapped `MultiError` shows its members in full, then the fields sorted by key, the
-stack trace innermost call first, and every cause formatted with `%+v` as well. `%#v` prints the error in Go syntax. `MultiError` prints its summary the same way, and with `%+v` every collected error is
-formatted with `%+v` in turn.
+stack trace innermost call first, and every cause formatted with `%+v` as well. An error reached only through a
+wrapper without a `Format` method, such as one from `fmt.Errorf` with several `%w` verbs, prints its message alone.
+`%#v` prints the error in Go syntax. `MultiError` prints its summary the same way, and with `%+v` every collected
+error is formatted with `%+v` in turn.
 
 **Stack traces:** `New`, `Newf` and `Wrap` capture up to 32 program counters above the caller; when the stack is deeper
 the outermost calls are dropped, `Truncated` reports it and `%+v` ends the trace with `...`. `StackTrace` returns a copy,
