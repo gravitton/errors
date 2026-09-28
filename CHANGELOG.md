@@ -14,16 +14,14 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - `MultiError.Format` implements `fmt.Formatter`: `%+v` prints every collected error with `%+v`
 
 ### Changed
-- `Wrap` and `Newf` reuse the stack trace of the first `*Error` found through single-error wrappers, and `Wrap` gives a stackless `*Error` the current stack trace
-- `Error.Fields` merges the fields of every `*Error` found through single-error wrappers, the outermost value winning
+- `Wrap`, `Newf`, `Error.Fields` and `%+v` look through single-error wrappers for inner `*Error` values: the first stack trace found is reused, fields are merged with the outermost value winning, and every cause is printed
+- `Wrap` gives a stackless `*Error` the current stack trace
 - `Error.WithCause` appends to the causes instead of replacing the cause (**breaking**)
 - `Error.Unwrap` returns `[]error` holding the underlying error and the causes, so `errors.Unwrap` returns nil for an `*Error` (**breaking**)
-- `Error.Is` compares the underlying error instead of the message and fields, so fields no longer scope a match and two `New` calls with the same text no longer match (**breaking**)
-- `%+v` prints the underlying error with `%+v`, the fields, the stack trace, and then the causes of every `*Error` found through single-error wrappers, each with `%+v`
-- `Error.Format` honors width, precision and flags for `%s`, `%q`, `%v` and `%x`
-- `Error.StackTrace` returns a copy
+- `Error.Is` matches when the target's underlying error is in the chain of the underlying error, instead of comparing the message and fields, so fields no longer scope a match and two `New` calls with the same text no longer match (**breaking**)
+- `Error.Format` honors width, precision and flags for `%s`, `%q`, `%v` and `%x`, and `%+v` prints the causes with `%+v` after the stack trace
+- `Error.StackTrace` and `MultiError.Unwrap` return copies
 - `MultiError.Error` indents every message with a tab and reports `no errors` for an empty collection (**breaking**)
-- `MultiError.Unwrap` returns a copy of the collected errors
 - Methods of `Error` and `MultiError` no longer handle nil receivers (**breaking**)
 
 ### Removed

@@ -26,7 +26,7 @@ Structured errors with fields, causes, and stack traces, plus a concurrent-safe 
 - **Drop-in replacement** for the standard `errors` package – swap the import, keep `New`, `Is`, `As` and `AsType`.
 - **Fields** – key-value context added at any layer, merged along the chain.
 - **Causes** – previous errors attached with `WithCause`, all visible to `Is` and `As`.
-- **Stack traces** captured where the error is raised, printed with `%+v`, and reused when the error is wrapped.
+- **Stack traces** captured where the error is raised and printed with `%+v`.
 - **Immutable** – every `With*` method returns a new error.
 - **Multi error** – concurrent-safe collection of errors as a single `error`, with `Join` on top.
 
@@ -94,7 +94,8 @@ errors.Is(err, ErrNotFound.WithField("id", 7)) // true, fields are not compared
 errors.Is(err, errors.New("not found"))        // false, a different error with the same text
 ```
 
-Check the error before wrapping it, never after:
+Check the error before wrapping it, never after: `Wrap(nil)` returns a nil `*Error`, which is not `nil` once stored in
+an `error`.
 
 ```go
 func Process() error {
@@ -154,12 +155,10 @@ Full reference: [pkg.go.dev][link-go-dev-reference].
 
 - **Standard library:** `Unwrap`, `Is`, `As`, `AsType` and `ErrUnsupported` are re-exported. `errors.Unwrap` returns
   `nil` for an `*Error`, since it unwraps to its underlying error and its causes; use `Is` and `As`.
-- **Main chain:** fields and stack traces are looked up through single-error wrappers only, never through causes or
-  errors wrapping several errors, such as a `MultiError`.
-- **Stack traces:** `New`, `Newf` and `Wrap` reuse the stack trace of the first `*Error` in the main chain that has
-  one, otherwise they capture up to 32 frames. `StackTrace` returns the program counters, so Sentry picks them up.
-- **Typed nil:** `Wrap(nil)` returns a nil `*Error`, which is not `nil` once stored in an `error`.
-- **Multi error:** use `ErrorOrNil` to return a collection as an `error`.
+- **Wrapping:** `Wrap`, `Newf` and `Fields` look for inner `*Error` values through single-error wrappers only, never
+  through causes or errors wrapping several errors, such as a `MultiError`. The first stack trace found is reused,
+  otherwise up to 32 frames are captured.
+- **Sentry:** `StackTrace` returns the program counters under the name Sentry looks for, so it picks them up.
 
 ## Credits
 
