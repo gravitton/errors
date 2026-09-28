@@ -77,12 +77,12 @@ func (e *Error) Unwrap() []error {
 	return append([]error{e.err}, e.causes...)
 }
 
-// Is reports whether target is an Error with the same underlying error. Fields are
-// not compared.
+// Is reports whether target is an Error whose underlying error is in the chain of
+// this error's underlying error. Fields are not compared.
 func (e *Error) Is(target error) bool {
 	t, ok := target.(*Error)
 
-	return ok && e.err == t.err
+	return ok && errors.Is(e.err, t.err)
 }
 
 // Fields returns the fields of every Error in the main chain, merged. The outermost
@@ -148,7 +148,7 @@ func (e *Error) GoString() string {
 
 func (e *Error) details() string {
 	b := &strings.Builder{}
-	fmt.Fprintf(b, "%+v", e.err)
+	b.WriteString(e.err.Error())
 
 	fields := e.Fields()
 	for _, key := range slices.Sorted(maps.Keys(fields)) {

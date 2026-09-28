@@ -18,6 +18,22 @@ func (e *fsError) Error() string {
 	return "fs"
 }
 
+type uncomparableError []string
+
+func (e uncomparableError) Error() string {
+	return "uncomparable"
+}
+
+type detailedError struct{}
+
+func (e *detailedError) Error() string {
+	return "detailed"
+}
+
+func (e *detailedError) Format(s fmt.State, verb rune) {
+	fmt.Fprint(s, "detailed with details")
+}
+
 func raisedIn(err *Error) string {
 	frame, _ := runtime.CallersFrames(err.StackTrace()).Next()
 
@@ -191,6 +207,15 @@ func TestIsIgnoresFields(t *testing.T) {
 	assert.ErrorIs(t, errSentinel, err)
 }
 
+func TestIsUnderlyingChain(t *testing.T) {
+	assert.ErrorIs(t, Newf("outer: %w", io.EOF), Wrap(io.EOF))
+	assert.NotErrorIs(t, Wrap(io.EOF), Newf("outer: %w", io.EOF))
+}
+
+func TestIsUncomparableUnderlying(t *testing.T) {
+	assert.NotErrorIs(t, Wrap(uncomparableError{}), Wrap(uncomparableError{}))
+}
+
 func TestIsStdError(t *testing.T) {
 	assert.ErrorIs(t, Wrap(io.EOF), io.EOF)
 	assert.ErrorIs(t, Wrap(fmt.Errorf("outer: %w", io.EOF)), io.EOF)
@@ -224,10 +249,10 @@ func TestFormatDetailsNested(t *testing.T) {
 	assert.True(t, strings.HasSuffix(details, "\ncaused by: EOF"))
 }
 
-func TestFormatDetailsCollection(t *testing.T) {
-	details := fmt.Sprintf("%+v", Wrap(Join(New("a").WithField("a", 1), io.EOF)))
+func TestFormatDetailsUnderlyingMessageOnly(t *testing.T) {
+	details := fmt.Sprintf("%+v", Wrap(&detailedError{}))
 
-	assert.True(t, strings.HasPrefix(details, "2 errors occurred:\n\ta\n\t\ta=1\n"))
+	assert.True(t, strings.HasPrefix(details, "detailed\n\tgithub.com/gravitton/errors.TestFormatDetailsUnderlyingMessageOnly\n"))
 }
 
 func TestFormatDetailsSentinel(t *testing.T) {
