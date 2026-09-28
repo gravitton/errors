@@ -7,151 +7,104 @@ import (
 	"sync"
 )
 
-// MultiError collects multiple errors into a single error value. It satisfies
-// the Go 1.20+ multi-error unwrap interface (Unwrap() []error), so standard
-// library functions such as errors.Is and errors.As traverse all collected
-// errors. All methods are safe for concurrent use. A nil *MultiError behaves
-// as an empty collection for every method except Add, which panics: use
-// NewMulti or the zero value to collect errors.
+// MultiError collects errors into a single error. It is safe for concurrent use.
 type MultiError struct {
 	errs  []error
 	mutex sync.RWMutex
 }
 
-// NewMulti returns a new, empty MultiError.
+// NewMulti returns an empty MultiError.
 func NewMulti() *MultiError {
 	return &MultiError{}
 }
 
-// Join returns a MultiError containing the given errors, skipping any nils.
-// Returns nil if all arguments are nil.
+// Join returns a MultiError with the given errors, or nil when all of them are nil.
 func Join(errs ...error) error {
-	m := &MultiError{}
+	m := NewMulti()
 	m.Add(errs...)
 
 	return m.ErrorOrNil()
 }
 
-// Add adds the given errors to the collection. Nil errors are silently
-// ignored, including typed nil values such as Wrap(nil) or a nil slice, and
-// so is the collection itself. Only that direct cycle is guarded against; a
-// collection reachable through another error still recurses forever when
-// rendered, as with errors.Join. It is safe to call Add concurrently with
-// other Add calls. Add panics on a nil receiver.
+// Add adds the errors to the collection, skipping nils.
 func (e *MultiError) Add(errs ...error) {
-	if len(errs) == 0 {
-		return
-	}
-
 	e.mutex.Lock()
 	defer e.mutex.Unlock()
 
 	for _, err := range errs {
-		if !isNil(err) && err != error(e) {
+		if err != nil {
 			e.errs = append(e.errs, err)
 		}
 	}
 }
 
-// Error returns the combined error message. An empty MultiError returns an
-// empty string and a nil one reports "<nil>", like a nil *Error. A
-// single-error MultiError returns that error's message unchanged, otherwise a
-// numbered summary is returned with every message indented.
+// Error returns the single collected message unchanged, or a numbered, indented list.
 func (e *MultiError) Error() string {
 	return e.render(func(err error) string {
 		return err.Error()
 	})
 }
 
-// Unwrap returns a copy of the collected errors, satisfying the Go 1.20+
-// multi-error unwrap interface. It returns nil for a nil receiver or an empty
-// collection. The result is safe to modify.
+// Unwrap returns a copy of the collected errors.
 func (e *MultiError) Unwrap() []error {
-	if e == nil {
-		return nil
-	}
-
 	e.mutex.RLock()
 	defer e.mutex.RUnlock()
 
 	return slices.Clone(e.errs)
 }
 
-// Len returns the number of collected errors. A nil receiver reports zero.
+// Len returns the number of collected errors.
 func (e *MultiError) Len() int {
-	if e == nil {
-		return 0
-	}
-
 	e.mutex.RLock()
 	defer e.mutex.RUnlock()
 
 	return len(e.errs)
 }
 
-// ErrorOrNil returns nil if no errors have been collected, or e itself
-// otherwise. A nil receiver is treated as an empty collection and also returns
-// nil.
+// ErrorOrNil returns nil when no errors were collected, otherwise the collection.
 func (e *MultiError) ErrorOrNil() error {
-	if e == nil || e.Len() == 0 {
+	if e.Len() == 0 {
 		return nil
 	}
 
 	return e
 }
 
-// Format implements fmt.Formatter. The combined message is printed like a
-// plain string, so %s, %q, %x, and %v honor width, precision, and flags. %+v
-// formats every collected error with %+v as well, so the fields, causes, and
-// stack traces they carry are printed, and %#v prints the collection in Go
-// syntax.
+// Format prints the message for %s, %v and %q, every error with %+v for %+v, and Go
+// syntax for %#v.
 func (e *MultiError) Format(s fmt.State, verb rune) {
 	format(e, s, verb)
 }
 
-// GoString implements fmt.GoStringer for debugging output.
+// GoString returns the collection in Go syntax.
 func (e *MultiError) GoString() string {
-	if e == nil {
-		return "(*errors.MultiError)(nil)"
-	}
-
 	return fmt.Sprintf("&errors.MultiError{errs:%#v}", e.Unwrap())
 }
 
-// details renders the collected errors with their details, as printed by the
-// %+v verb, laid out exactly like Error.
 func (e *MultiError) details() string {
 	return e.render(func(err error) string {
 		return fmt.Sprintf("%+v", err)
 	})
 }
 
-// render lays out the collected errors: "<nil>" for a nil receiver, empty for
-// no errors, the sole error as rendered, and otherwise a numbered summary with
-// every rendered error indented.
 func (e *MultiError) render(text func(error) string) string {
-	if e == nil {
-		return "<nil>"
-	}
-
 	errs := e.Unwrap()
 
 	switch len(errs) {
 	case 0:
-		return ""
+		return "no errors"
 	case 1:
 		return text(errs[0])
-	default:
-		msg := make([]string, len(errs))
-		for i, err := range errs {
-			msg[i] = indent(text(err))
-		}
-
-		return fmt.Sprintf("%d errors occurred:\n%s", len(errs), strings.Join(msg, "\n"))
 	}
+
+	lines := make([]string, len(errs))
+	for i, err := range errs {
+		lines[i] = indent(text(err))
+	}
+
+	return fmt.Sprintf("%d errors occurred:\n%s", len(errs), strings.Join(lines, "\n"))
 }
 
-// indent prefixes every line of text with a tab.
 func indent(text string) string {
 	return "\t" + strings.ReplaceAll(text, "\n", "\n\t")
 }

@@ -5,288 +5,208 @@ import (
 	"fmt"
 	"iter"
 	"maps"
-	"reflect"
 	"runtime"
 	"slices"
 	"strings"
 )
 
-// maxFrames is the number of stack frames an Error keeps, innermost first.
 const maxFrames = 32
 
-// Error is an error enriched with structured key-value fields, the causes it
-// was attached, and a captured stack trace. All methods that add data return
-// a new copy; the original is never mutated.
+// Error is an immutable error with key-value fields, causes, and a stack trace.
 type Error struct {
 	err    error
-	data   map[string]any
+	fields map[string]any
 	causes []error
 	stack  []uintptr
 }
 
-// New creates an Error from the given text and captures the current stack trace.
+// New creates an Error with the given text and the current stack trace.
 func New(text string) *Error {
-	return &Error{
-		err:   errors.New(text),
-		stack: callers(1),
-	}
+	return wrap(errors.New(text))
 }
 
-// Sentinel creates an Error from the given text without a stack trace. It is
-// meant for package-level errors: the stack trace is captured later, where the
-// sentinel is first passed to Wrap or wrapped by Newf, so it points at the
-// place the error was raised rather than at package initialisation. WithField,
-// WithFields and WithCause keep a sentinel stackless, so derive a scoped
-// sentinel freely and Wrap it where it is raised.
+// Sentinel creates an Error without a stack trace, meant for package-level errors.
+// The stack trace is captured where it is passed to Wrap or wrapped by Newf.
 func Sentinel(text string) *Error {
 	return &Error{
 		err: errors.New(text),
 	}
 }
 
-// Newf creates an Error from a formatted string. When the format wraps an
-// *Error with %w, its fields, causes, and stack trace are inherited, so adding
-// context to an error never hides what it already carries. Otherwise, or when
-// the wrapped *Error has no stack trace, the current stack trace is captured.
-func Newf(format string, v ...any) *Error {
-	return derive(fmt.Errorf(format, v...))
+// Newf creates an Error from fmt.Errorf, like Wrap does.
+func Newf(format string, args ...any) *Error {
+	return wrap(fmt.Errorf(format, args...))
 }
 
-// Wrap converts an error into an *Error. If err is nil, including a typed nil
-// such as a nil *MultiError, Wrap returns nil. If err is already an *Error it
-// is returned unchanged, or as a copy with the
-// current stack trace when it has none. If an *Error is found by repeatedly
-// unwrapping err, its fields, causes, and stack trace are inherited. Otherwise
-// the current stack trace is captured.
-//
-// Warning: the returned *Error nil is a typed nil pointer. When assigned to
-// or returned as an error interface it will not equal nil. Prefer checking the
-// error before passing it to Wrap rather than checking the result afterwards.
+// Wrap converts err into an Error with the best stack trace available: the one of
+// the first Error in the main chain that has one, otherwise the current one.
+// A nil err returns nil.
 func Wrap(err error) *Error {
-	if isNil(err) {
+	if err == nil {
 		return nil
 	}
 
-	if e, ok := err.(*Error); ok {
-		return e.traced(1)
-	}
-
-	return derive(err)
+	return wrap(err)
 }
 
-// derive builds an Error around err, inheriting the fields, causes, and stack
-// trace of its ancestor. When there is none, or it has no stack trace, the
-// stack trace is captured at the caller of the exported function.
-func derive(err error) *Error {
-	inner := ancestor(err)
-	if inner == nil {
-		return &Error{
-			err:   err,
-			stack: callers(2),
-		}
+func wrap(err error) *Error {
+	derived := Error{
+		err: err,
 	}
 
-	derived := *inner
-	derived.err = err
-	derived.stack = inner.trace(2)
+	if e, ok := err.(*Error); ok {
+		if e.stack != nil {
+			return e
+		}
+
+		derived = *e
+	}
+
+	derived.stack = stackOf(err)
 
 	return &derived
 }
 
-// ancestor returns the first *Error reached by repeatedly unwrapping err with
-// Unwrap() error. Errors wrapping several errors at once are not entered, so
-// wrapping a collection never adopts the data of one of its members.
-func ancestor(err error) *Error {
-	for err != nil {
-		if e, ok := err.(*Error); ok {
-			return e
-		}
-
-		wrapper, ok := err.(interface{ Unwrap() error })
-		if !ok {
-			return nil
-		}
-
-		err = wrapper.Unwrap()
-	}
-
-	return nil
-}
-
-// Error returns the error message string. A nil *Error reports "<nil>".
+// Error returns the message of the underlying error.
 func (e *Error) Error() string {
-	if e == nil || e.err == nil {
-		return "<nil>"
-	}
-
 	return e.err.Error()
 }
 
-// Fields returns a shallow copy of the structured key-value data attached to
-// this error. Adding or removing keys does not affect the error; values that
-// are maps, slices or pointers remain shared.
-func (e *Error) Fields() map[string]any {
-	if e == nil {
-		return nil
-	}
-
-	return maps.Clone(e.data)
+// Unwrap returns the underlying error followed by the causes.
+func (e *Error) Unwrap() []error {
+	return append([]error{e.err}, e.causes...)
 }
 
-// WithField returns a copy of the error with the given key-value field added.
-// The original error is not modified and the stack trace, or its absence, is
-// kept. A nil *Error returns nil, so chaining after Wrap(nil) does not panic.
+// Is reports whether target is an Error with the same underlying error. Fields are
+// not compared.
+func (e *Error) Is(target error) bool {
+	t, ok := target.(*Error)
+
+	return ok && e.err == t.err
+}
+
+// Fields returns the fields of every Error in the main chain, merged. The outermost
+// value of a key wins.
+func (e *Error) Fields() map[string]any {
+	fields := make(map[string]any)
+
+	for inner := range mainChain(e) {
+		for key, value := range inner.fields {
+			if _, ok := fields[key]; !ok {
+				fields[key] = value
+			}
+		}
+	}
+
+	return fields
+}
+
+// WithField returns a copy of the error with the field added.
 func (e *Error) WithField(key string, value any) *Error {
 	return e.WithFields(map[string]any{key: value})
 }
 
-// WithFields returns a copy of the error with the given fields merged in.
-// The original error is not modified and the stack trace, or its absence, is
-// kept. An empty values returns the receiver as is. A nil *Error returns nil,
-// so chaining after Wrap(nil) does not panic.
-func (e *Error) WithFields(values map[string]any) *Error {
-	if e == nil || len(values) == 0 {
-		return e
-	}
-
-	data := make(map[string]any, len(e.data)+len(values))
-	maps.Copy(data, e.data)
-	maps.Copy(data, values)
-
+// WithFields returns a copy of the error with the fields added.
+func (e *Error) WithFields(fields map[string]any) *Error {
 	derived := *e
-	derived.data = data
+	derived.fields = make(map[string]any, len(e.fields)+len(fields))
+	maps.Copy(derived.fields, e.fields)
+	maps.Copy(derived.fields, fields)
 
 	return &derived
 }
 
-// WithCause returns a copy of the error with the given cause attached after
-// the causes it already carries, so adding a cause never hides another one.
-// Every cause is returned by Unwrap, making it visible to errors.Is and
-// errors.As. A nil cause returns the receiver as is. The stack trace, or its
-// absence, is kept. A nil *Error returns nil, so chaining after Wrap(nil)
-// does not panic.
-func (e *Error) WithCause(err error) *Error {
-	if e == nil || err == nil {
+// WithCause returns a copy of the error with the cause appended. A nil cause
+// returns the error unchanged.
+func (e *Error) WithCause(cause error) *Error {
+	if cause == nil {
 		return e
 	}
 
 	derived := *e
-	derived.causes = append(slices.Clip(e.causes), err)
+	derived.causes = append(slices.Clip(e.causes), cause)
 
 	return &derived
 }
 
-// Causes returns a copy of the causes attached with WithCause, in the order
-// they were attached. A nil *Error or one without causes returns nil.
-func (e *Error) Causes() []error {
-	if e == nil {
-		return nil
-	}
-
-	return slices.Clone(e.causes)
+// StackTrace returns a copy of the program counters captured for the error,
+// innermost call first.
+func (e *Error) StackTrace() []uintptr {
+	return slices.Clone(e.stack)
 }
 
-// Unwrap returns the underlying error created by New, Sentinel, Newf or Wrap, followed
-// by the causes attached with WithCause. All stay visible to errors.Is and
-// errors.As, so attaching a cause never hides the wrapped error.
-// A nil or zero-value *Error returns nil.
-func (e *Error) Unwrap() []error {
-	if e == nil || e.err == nil {
-		return nil
-	}
-
-	return append([]error{e.err}, e.causes...)
-}
-
-// Is reports whether e matches target. Two *Error values match when the
-// underlying error of target is found in the chain of the underlying error of
-// e, and every field present in target also appears in e with the same value.
-// WithField, WithFields and WithCause keep the underlying error, and Wrap and
-// Newf keep it in the chain, so errors.Is finds a sentinel Error anywhere,
-// optionally scoped by fields. Causes are never entered by the match, so the
-// fields of e only scope errors it was derived from; a sentinel attached as a
-// cause is still found by errors.Is, but only with the fields it carries
-// itself. Only target itself is inspected; neither its cause nor the errors
-// wrapped by it are.
-//
-// Field values of different types never match. Uncomparable values, including
-// comparable types holding an uncomparable dynamic value, are compared with
-// reflect.DeepEqual, so function fields only match when both are nil.
-// Underlying errors of an uncomparable type never match, and neither does a
-// zero-value Error.
-//
-// Fields can widen a match but never narrow one: errors.Is keeps unwrapping
-// into the chain, where the error e was derived from still carries the values
-// it had at that point. An error that overrides a field therefore matches a
-// target holding either the new or the previous value.
-func (e *Error) Is(target error) bool {
-	err, ok := target.(*Error)
-	if !ok || e == nil || err == nil {
-		return false
-	}
-
-	if !contains(e.err, err.err) {
-		return false
-	}
-
-	for k, v := range err.data {
-		value, ok := e.data[k]
-		if !ok || !equal(value, v) {
-			return false
-		}
-	}
-
-	return true
-}
-
-// Format implements fmt.Formatter. The message is printed like a plain string,
-// so %s, %q, %x, and %v honor width, precision, and flags. %+v additionally
-// prints the fields, the stack trace, and the causes, formatting the underlying
-// error and every cause with %+v as well, and %#v prints the error in Go
-// syntax. Errors reached only through a wrapper without a Format method, such
-// as one from fmt.Errorf with several %w verbs, print their message alone.
+// Format prints the message for %s, %v and %q, the message with fields, stack
+// trace and causes for %+v, and Go syntax for %#v.
 func (e *Error) Format(s fmt.State, verb rune) {
 	format(e, s, verb)
 }
 
-// GoString implements fmt.GoStringer for debugging output.
+// GoString returns the error in Go syntax.
 func (e *Error) GoString() string {
-	if e == nil {
-		return "(*errors.Error)(nil)"
+	return fmt.Sprintf("&errors.Error{err:%#v, fields:%#v, causes:%#v}", e.err, e.fields, e.causes)
+}
+
+func (e *Error) details() string {
+	b := &strings.Builder{}
+	fmt.Fprintf(b, "%+v", e.err)
+
+	fields := e.Fields()
+	for _, key := range slices.Sorted(maps.Keys(fields)) {
+		fmt.Fprintf(b, "\n\t%s=%v", key, fields[key])
 	}
 
-	return fmt.Sprintf("&errors.Error{err:%#v, data:%#v, causes:%#v}", e.err, e.data, e.causes)
-}
-
-// StackTrace returns a copy of the program counters captured when the error
-// was created, innermost call first and at most 32 of them. See [Error.Frames]
-// for the resolved call frames and [Error.Truncated] to learn whether deeper
-// calls were dropped.
-func (e *Error) StackTrace() []uintptr {
-	if e == nil {
-		return nil
+	for frame := range frames(e.stack) {
+		fmt.Fprintf(b, "\n\t%s\n\t\t%s:%d", frame.Function, frame.File, frame.Line)
 	}
 
-	return slices.Clone(e.stackTrace())
+	for inner := range mainChain(e) {
+		for _, cause := range inner.causes {
+			fmt.Fprintf(b, "\ncaused by: %+v", cause)
+		}
+	}
+
+	return b.String()
 }
 
-// Truncated reports whether the stack was deeper than the 32 program counters
-// kept, so the outermost calls are missing from StackTrace and Frames.
-func (e *Error) Truncated() bool {
-	return e != nil && len(e.stack) > maxFrames
+func mainChain(err error) iter.Seq[*Error] {
+	return func(yield func(*Error) bool) {
+		for err != nil {
+			switch e := err.(type) {
+			case *Error:
+				if !yield(e) {
+					return
+				}
+
+				err = e.err
+			case interface{ Unwrap() error }:
+				err = e.Unwrap()
+			default:
+				return
+			}
+		}
+	}
 }
 
-// Frames resolves the captured stack trace into call frames, innermost call
-// first. A program counter inside an inlined call resolves to several frames,
-// so there may be more frames than program counters. The sequence is empty
-// when no stack was captured.
-func (e *Error) Frames() iter.Seq[runtime.Frame] {
+func stackOf(err error) []uintptr {
+	for e := range mainChain(err) {
+		if e.stack != nil {
+			return e.stack
+		}
+	}
+
+	stack := make([]uintptr, maxFrames)
+	n := runtime.Callers(4, stack)
+
+	return stack[:n]
+}
+
+func frames(stack []uintptr) iter.Seq[runtime.Frame] {
 	return func(yield func(runtime.Frame) bool) {
-		if e == nil || len(e.stack) == 0 {
+		if len(stack) == 0 {
 			return
 		}
 
-		frames := runtime.CallersFrames(e.stackTrace())
+		frames := runtime.CallersFrames(stack)
 		for {
 			frame, more := frames.Next()
 			if !yield(frame) || !more {
@@ -294,156 +214,4 @@ func (e *Error) Frames() iter.Seq[runtime.Frame] {
 			}
 		}
 	}
-}
-
-// details renders the underlying error with its details together with the
-// fields, the stack trace, and the causes, as printed by the %+v verb. A
-// truncated stack trace ends with an ellipsis.
-func (e *Error) details() string {
-	if e == nil || e.err == nil {
-		return e.Error()
-	}
-
-	b := &strings.Builder{}
-	fmt.Fprintf(b, "%+v", e.err)
-
-	for _, k := range slices.Sorted(maps.Keys(e.data)) {
-		fmt.Fprintf(b, "\n\t%s=%v", k, e.data[k])
-	}
-
-	for frame := range e.Frames() {
-		fmt.Fprintf(b, "\n\t%s\n\t\t%s:%d", frame.Function, frame.File, frame.Line)
-	}
-
-	if e.Truncated() {
-		b.WriteString("\n\t...")
-	}
-
-	for _, cause := range e.causes {
-		fmt.Fprintf(b, "\ncaused by: %+v", cause)
-	}
-
-	return b.String()
-}
-
-// traced returns e when it carries a stack trace, or a copy with the stack
-// trace captured skip frames above the caller when it has none.
-func (e *Error) traced(skip int) *Error {
-	if e == nil || len(e.stack) > 0 {
-		return e
-	}
-
-	derived := *e
-	derived.stack = callers(skip + 1)
-
-	return &derived
-}
-
-// stackTrace returns the kept program counters without the extra one captured
-// to detect truncation.
-func (e *Error) stackTrace() []uintptr {
-	return e.stack[:min(len(e.stack), maxFrames)]
-}
-
-// trace returns the stack trace of e, or captures the current one skip frames
-// above the caller when e has none.
-func (e *Error) trace(skip int) []uintptr {
-	if len(e.stack) > 0 {
-		return e.stack
-	}
-
-	return callers(skip + 1)
-}
-
-// callers returns the program counters starting skip frames above the caller.
-// One more than maxFrames is captured so that a truncated stack can be told
-// apart from one that is exactly maxFrames deep.
-func callers(skip int) []uintptr {
-	stack := make([]uintptr, maxFrames+1)
-	n := runtime.Callers(skip+2, stack)
-
-	return stack[:n]
-}
-
-// isNil reports whether err is nil, either as an interface or as a typed nil
-// pointer, slice, map, function, or channel stored in one.
-func isNil(err error) bool {
-	if err == nil {
-		return true
-	}
-
-	value := reflect.ValueOf(err)
-
-	switch value.Kind() {
-	case reflect.Pointer, reflect.Slice, reflect.Map, reflect.Func, reflect.Chan:
-		return value.IsNil()
-	default:
-		return false
-	}
-}
-
-// equal compares two field values without panicking on uncomparable types,
-// including comparable types that hold an uncomparable dynamic value.
-func equal(a, b any) bool {
-	if a == nil || b == nil {
-		return a == b
-	}
-
-	va, vb := reflect.ValueOf(a), reflect.ValueOf(b)
-	if va.Type() != vb.Type() {
-		return false
-	}
-
-	if va.Comparable() {
-		return a == b
-	}
-
-	return reflect.DeepEqual(a, b)
-}
-
-// contains reports whether target is found in the chain of err. It follows
-// the chain like errors.Is, except that an *Error is entered through its
-// underlying error only, never through its cause. A nil target or one holding
-// an uncomparable value, including a comparable type with an uncomparable
-// dynamic value, is never found, so the comparison cannot panic.
-func contains(err, target error) bool {
-	if target == nil || !reflect.ValueOf(target).Comparable() {
-		return false
-	}
-
-	return within(err, target)
-}
-
-// within walks the chain of err looking for a target, honoring Is methods and
-// both Unwrap forms, and stepping over the cause of every *Error. A typed nil
-// *Error ends the chain.
-func within(err, target error) bool {
-	if err == nil {
-		return false
-	}
-
-	if err == target {
-		return true
-	}
-
-	if e, ok := err.(*Error); ok {
-		return e != nil && within(e.err, target)
-	}
-
-	if matcher, ok := err.(interface{ Is(error) bool }); ok && matcher.Is(target) {
-		return true
-	}
-
-	switch wrapper := err.(type) {
-	case interface{ Unwrap() error }:
-		return within(wrapper.Unwrap(), target)
-	case interface{ Unwrap() []error }:
-		for _, err := range wrapper.Unwrap() {
-			if within(err, target) {
-				return true
-			}
-		}
-	}
-
-	return false
 }

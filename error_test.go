@@ -1,645 +1,235 @@
 package errors
 
 import (
-	"errors"
 	"fmt"
 	"io"
-	"slices"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/gravitton/assert"
 )
 
+var errSentinel = Sentinel("sentinel")
+
+type fsError struct{}
+
+func (e *fsError) Error() string {
+	return "fs"
+}
+
+func raisedIn(err *Error) string {
+	frame, _ := runtime.CallersFrames(err.StackTrace()).Next()
+
+	return strings.TrimPrefix(frame.Function, "github.com/gravitton/errors.")
+}
+
 func TestNew(t *testing.T) {
 	err := New("test")
 
 	assert.Equal(t, err.Error(), "test")
+	assert.Equal(t, raisedIn(err), "TestNew")
 	assert.Empty(t, err.Fields())
 	assert.Length(t, err.Unwrap(), 1)
 }
 
-func TestNewf(t *testing.T) {
-	err := Newf("Test Error #%d: %s", 5, "failed to spawn")
-
-	assert.Equal(t, err.Error(), "Test Error #5: failed to spawn")
-	assert.Empty(t, err.Fields())
-	assert.Length(t, err.Unwrap(), 1)
+func TestNewDistinct(t *testing.T) {
+	assert.NotErrorIs(t, New("test"), New("test"))
 }
-
-func testMethod(err error) error {
-	return Wrap(err)
-}
-
-func TestWrapNil(t *testing.T) {
-	err1 := Wrap(nil)
-
-	assert.NoError(t, err1)
-	assert.True(t, err1 == nil)
-
-	err2 := testMethod(nil)
-
-	assert.NoError(t, err2)
-	assert.False(t, err2 == nil) // typed *Error(nil) nil pointer
-
-	var nilMulti *MultiError
-
-	assert.True(t, Wrap(nilMulti) == nil)
-	assert.True(t, Wrap(sliceError(nil)) == nil)
-	assert.True(t, Wrap(err1) == nil)
-}
-
-func TestWrapStdError(t *testing.T) {
-	original := errors.New("original")
-	err := Wrap(original)
-
-	assert.Equal(t, err.Error(), "original")
-	assert.Equal(t, err.Unwrap(), []error{original})
-}
-
-func TestWrapError(t *testing.T) {
-	original := New("original")
-	err := Wrap(original)
-
-	assert.Same(t, err, original)
-}
-
-func TestWrapInherits(t *testing.T) {
-	inner := New("inner").WithField("id", 42).WithCause(io.EOF)
-	outer := Wrap(fmt.Errorf("ctx: %w", inner))
-
-	assert.Equal(t, outer.Error(), "ctx: inner")
-	assert.Equal(t, outer.Fields(), map[string]any{"id": 42})
-	assert.Equal(t, outer.StackTrace(), inner.StackTrace())
-	assert.Equal(t, outer.Unwrap()[1], io.EOF)
-	assert.ErrorIs(t, outer, inner)
-	assert.ErrorIs(t, outer, inner.WithField("id", 42))
-	assert.NotErrorIs(t, outer, inner.WithField("id", 7))
-	assert.ErrorIs(t, outer, io.EOF)
-
-	found, ok := AsType[*Error](outer)
-
-	assert.True(t, ok)
-	assert.Same(t, found, outer)
-}
-
-func TestWrapDoesNotInheritFromCollection(t *testing.T) {
-	a := New("a").WithField("from", "a").WithCause(io.EOF)
-	b := New("b").WithField("from", "b")
-
-	joined := Wrap(Join(a, b))
-
-	assert.Empty(t, joined.Fields())
-	assert.Length(t, joined.Unwrap(), 1)
-	assert.Equal(t, slices.Collect(joined.Frames())[0].Function, "github.com/gravitton/errors.TestWrapDoesNotInheritFromCollection")
-	assert.ErrorIs(t, joined, a)
-	assert.ErrorIs(t, joined, b)
-
-	multi := Newf("%w and %w", a, b)
-
-	assert.Empty(t, multi.Fields())
-	assert.ErrorIs(t, multi, a)
-	assert.ErrorIs(t, multi, b)
-}
-
-func TestWrapInheritsTypedNil(t *testing.T) {
-	var inner *Error
-	outer := Wrap(fmt.Errorf("ctx: %w", inner))
-
-	assert.Equal(t, outer.Error(), "ctx: <nil>")
-	assert.Empty(t, outer.Fields())
-	assert.NotEmpty(t, outer.StackTrace())
-	assert.NotErrorIs(t, outer, New("other"))
-	assert.ErrorIs(t, outer, outer)
-	assert.ErrorIs(t, outer.WithCause(io.EOF), io.EOF)
-}
-
-func TestStackTraceIsCopied(t *testing.T) {
-	err := New("test")
-
-	stack := err.StackTrace()
-	stack[0] = 0
-
-	assert.NotEqual(t, err.StackTrace()[0], uintptr(0))
-	assert.Equal(t, err.StackTrace(), slices.Clone(err.StackTrace()))
-}
-
-func TestNewfInherits(t *testing.T) {
-	inner := New("inner").WithField("id", 42)
-	outer := Newf("ctx %d: %w", 1, inner).WithField("attempt", 3)
-
-	assert.Equal(t, outer.Error(), "ctx 1: inner")
-	assert.Equal(t, outer.Fields(), map[string]any{"id": 42, "attempt": 3})
-	assert.Equal(t, outer.StackTrace(), inner.StackTrace())
-	assert.ErrorIs(t, outer, inner.WithField("id", 42))
-	assert.ErrorIs(t, outer, inner.WithField("attempt", 3))
-	assert.NotErrorIs(t, inner, outer)
-}
-
-var errSentinel = Sentinel("sentinel")
 
 func TestSentinel(t *testing.T) {
 	assert.Equal(t, errSentinel.Error(), "sentinel")
 	assert.Empty(t, errSentinel.StackTrace())
-	assert.Empty(t, slices.Collect(errSentinel.Frames()))
-	assert.NotContains(t, fmt.Sprintf("%+v", errSentinel), "\n")
 }
 
-func TestSentinelCapturesStackOnWrap(t *testing.T) {
-	scoped := errSentinel.WithField("id", 1)
+func TestNewf(t *testing.T) {
+	err := Newf("test %d", 5)
 
-	wrapped := []*Error{
-		Wrap(errSentinel),
-		Wrap(scoped),
-		Wrap(fmt.Errorf("ctx: %w", errSentinel)),
-		Newf("ctx: %w", errSentinel),
-		Newf("ctx: %w", scoped),
-	}
-
-	for _, err := range wrapped {
-		assert.ErrorIs(t, err, errSentinel)
-		assert.Equal(t, slices.Collect(err.Frames())[0].Function, "github.com/gravitton/errors.TestSentinelCapturesStackOnWrap")
-	}
-
-	assert.Empty(t, errSentinel.StackTrace())
-	assert.NotSame(t, Wrap(errSentinel), errSentinel)
+	assert.Equal(t, err.Error(), "test 5")
+	assert.Equal(t, raisedIn(err), "TestNewf")
 }
 
-func TestSentinelStaysStacklessOnWith(t *testing.T) {
-	derived := []*Error{
-		errSentinel.WithField("id", 1),
-		errSentinel.WithFields(map[string]any{"id": 1}),
-		errSentinel.WithCause(io.EOF),
-		errSentinel.WithField("id", 1).WithCause(io.EOF),
-	}
-
-	for _, err := range derived {
-		assert.ErrorIs(t, err, errSentinel)
-		assert.Empty(t, err.StackTrace())
-	}
-
-	assert.Same(t, errSentinel.WithFields(nil), errSentinel)
-	assert.Same(t, errSentinel.WithCause(nil), errSentinel)
-}
-
-func TestDeriveKeepsExistingStack(t *testing.T) {
+func TestNewfReusesStack(t *testing.T) {
 	inner := New("inner")
+	err := func() *Error {
+		return Newf("outer: %w", inner)
+	}()
 
-	derived := []*Error{
-		inner.WithField("id", 1),
-		inner.WithCause(io.EOF),
-		Wrap(inner),
-		Newf("ctx: %w", inner),
-	}
-
-	for _, err := range derived {
-		assert.Equal(t, err.StackTrace(), inner.StackTrace())
-	}
+	assert.Equal(t, err.Error(), "outer: inner")
+	assert.Equal(t, err.StackTrace(), inner.StackTrace())
 }
 
-func TestStackTrace(t *testing.T) {
-	err1 := New("test")
-	err2 := Newf("test %d", 1)
-	err3 := Wrap(errors.New("std"))
-
-	assert.NotEmpty(t, err1.StackTrace())
-	assert.NotEmpty(t, err2.StackTrace())
-	assert.NotEmpty(t, err3.StackTrace())
+func TestWrapNil(t *testing.T) {
+	assert.True(t, Wrap(nil) == nil)
 }
 
-func TestFields(t *testing.T) {
-	err1 := New("test")
+func TestWrapErrorWithStack(t *testing.T) {
+	err := New("test")
 
-	assert.Empty(t, err1.Fields())
+	assert.Same(t, Wrap(err), err)
+}
 
-	err2 := err1.WithField("action", "call")
+func TestWrapSentinel(t *testing.T) {
+	err := Wrap(errSentinel.WithField("id", 1))
 
-	assert.NotSame(t, err1, err2)
-	assert.Empty(t, err1.Fields())
-	assert.Equal(t, err2.Fields(), map[string]any{"action": "call"})
+	assert.Equal(t, raisedIn(err), "TestWrapSentinel")
+	assert.Equal(t, err.Fields(), map[string]any{"id": 1})
+	assert.ErrorIs(t, err, errSentinel)
+	assert.Empty(t, errSentinel.StackTrace())
+}
 
-	err3 := err2.WithFields(map[string]any{"type": "warning"})
+func TestWrapStdError(t *testing.T) {
+	err := Wrap(io.EOF)
 
-	assert.NotSame(t, err2, err3)
-	assert.Equal(t, err2.Fields(), map[string]any{"action": "call"})
-	assert.Equal(t, err3.Fields(), map[string]any{"action": "call", "type": "warning"})
+	assert.Equal(t, err.Error(), "EOF")
+	assert.Equal(t, err.Unwrap(), []error{io.EOF})
+	assert.Equal(t, raisedIn(err), "TestWrapStdError")
+}
 
-	err4 := err3.WithFields(map[string]any{"type": "error", "debug": true, "line": 15})
+func TestWrapReusesStack(t *testing.T) {
+	inner := New("inner")
+	err := func() *Error {
+		return Wrap(fmt.Errorf("outer: %w", inner))
+	}()
 
-	assert.NotSame(t, err3, err4)
-	assert.Equal(t, err3.Fields(), map[string]any{"action": "call", "type": "warning"})
-	assert.Equal(t, err4.Fields(), map[string]any{"action": "call", "type": "error", "debug": true, "line": 15})
+	assert.Equal(t, err.StackTrace(), inner.StackTrace())
+}
+
+func TestWrapSkipsCollections(t *testing.T) {
+	err := Wrap(Join(New("a").WithField("a", 1), New("b")))
+
+	assert.Equal(t, raisedIn(err), "TestWrapSkipsCollections")
+	assert.Empty(t, err.Fields())
+}
+
+func TestWrapSkipsCauses(t *testing.T) {
+	err := Wrap(fmt.Errorf("outer: %w", errSentinel.WithCause(New("cause").WithField("a", 1))))
+
+	assert.Equal(t, raisedIn(err), "TestWrapSkipsCauses")
+	assert.Empty(t, err.Fields())
+}
+
+func TestWithFieldIsImmutable(t *testing.T) {
+	original := New("test").WithField("a", 1)
+	derived := original.WithField("b", 2)
+
+	assert.Equal(t, original.Fields(), map[string]any{"a": 1})
+	assert.Equal(t, derived.Fields(), map[string]any{"a": 1, "b": 2})
+	assert.Equal(t, derived.StackTrace(), original.StackTrace())
+}
+
+func TestWithFields(t *testing.T) {
+	err := New("test").WithField("a", 1).WithFields(map[string]any{"a": 2, "b": 3})
+
+	assert.Equal(t, err.Fields(), map[string]any{"a": 2, "b": 3})
+}
+
+func TestFieldsMergeMainChain(t *testing.T) {
+	inner := New("inner").WithFields(map[string]any{"a": 1, "b": 1})
+	err := Wrap(fmt.Errorf("outer: %w", inner)).WithField("b", 2)
+
+	assert.Equal(t, err.Fields(), map[string]any{"a": 1, "b": 2})
 }
 
 func TestFieldsAreCopied(t *testing.T) {
-	err := New("test").WithField("action", "call")
+	err := New("test").WithField("a", 1)
+	err.Fields()["a"] = 2
 
-	fields := err.Fields()
-	fields["action"] = "changed"
-
-	assert.Equal(t, err.Fields(), map[string]any{"action": "call"})
-}
-
-func TestFieldsUncomparableValues(t *testing.T) {
-	base := New("test")
-
-	err1 := base.WithField("tags", []string{"a", "b"})
-	err2 := base.WithField("tags", []string{"a", "b"})
-	err3 := base.WithField("tags", []string{"a", "c"})
-	err4 := base.WithField("tags", "a")
-
-	assert.ErrorIs(t, err1, err2)
-	assert.NotErrorIs(t, err1, err3)
-	assert.NotErrorIs(t, err1, err4)
-}
-
-type container struct {
-	value any
-}
-
-func TestFieldsUncomparableDynamicValues(t *testing.T) {
-	base := New("test")
-
-	err1 := base.WithField("box", container{value: []int{1}})
-	err2 := base.WithField("box", container{value: []int{1}})
-	err3 := base.WithField("box", container{value: []int{2}})
-	err4 := base.WithField("box", container{value: 1})
-
-	assert.ErrorIs(t, err1, err2)
-	assert.NotErrorIs(t, err1, err3)
-	assert.NotErrorIs(t, err1, err4)
-	assert.ErrorIs(t, err4, base.WithField("box", container{value: 1}))
-}
-
-func TestFieldsNilValues(t *testing.T) {
-	base := New("test")
-
-	assert.ErrorIs(t, base.WithField("k", nil), base.WithField("k", nil))
-	assert.NotErrorIs(t, base.WithField("k", nil), base.WithField("k", 1))
-	assert.NotErrorIs(t, base.WithField("k", 1), base.WithField("k", nil))
-	assert.NotErrorIs(t, base, base.WithField("k", nil))
-}
-
-type sliceError []string
-
-func (e sliceError) Error() string {
-	return strings.Join(e, ", ")
-}
-
-func TestErrorsIsUncomparableError(t *testing.T) {
-	err1 := Wrap(sliceError{"a"})
-	err2 := Wrap(sliceError{"a"})
-
-	assert.NotErrorIs(t, err1, err2)
-	assert.ErrorIs(t, err1, err1)
-}
-
-type boxError struct {
-	value any
-}
-
-func (e boxError) Error() string {
-	return "box"
-}
-
-func TestErrorsIsUncomparableDynamicError(t *testing.T) {
-	err1 := Wrap(boxError{value: []int{1}})
-	err2 := Wrap(boxError{value: []int{1}})
-
-	assert.NotErrorIs(t, err1, err2)
-	assert.ErrorIs(t, err1, err1)
-	assert.ErrorIs(t, Wrap(boxError{value: 1}), Wrap(boxError{value: 1}))
-}
-
-func TestZeroValue(t *testing.T) {
-	var err Error
-
-	assert.Equal(t, err.Error(), "<nil>")
-	assert.Empty(t, err.Unwrap())
-	assert.NotErrorIs(t, &err, errors.New("test"))
-	assert.NotErrorIs(t, &err, &Error{})
-	assert.NotErrorIs(t, New("test"), &err)
-}
-
-func TestWithFieldsEmpty(t *testing.T) {
-	err := New("test")
-
-	assert.Same(t, err.WithFields(nil), err)
-	assert.Same(t, err.WithFields(map[string]any{}), err)
-	assert.True(t, err.WithFields(nil).data == nil)
-}
-
-func TestFieldsFunctionValues(t *testing.T) {
-	base := New("test")
-	callback := func() {}
-
-	err1 := base.WithFields(map[string]any{"key": "value", "callback": callback})
-	err2 := base.WithField("callback", callback)
-
-	assert.Length(t, err1.Fields(), 2)
-	assert.False(t, err1.Is(err2)) // function values never compare equal
-}
-
-func TestNilReceiver(t *testing.T) {
-	var err *Error
-
-	assert.Equal(t, err.Error(), "<nil>")
-	assert.Empty(t, err.Fields())
-	assert.Empty(t, err.StackTrace())
-	assert.Empty(t, slices.Collect(err.Frames()))
-	assert.NoError(t, err.WithField("action", "call"))
-	assert.NoError(t, err.WithFields(map[string]any{"action": "call"}))
-	assert.NoError(t, err.WithCause(New("cause")))
-	assert.Empty(t, err.Unwrap())
-	assert.False(t, err.Is(New("test")))
-	assert.NotErrorIs(t, New("test"), err)
-}
-
-func deep(n int) *Error {
-	if n == 0 {
-		return New("deep")
-	}
-
-	return deep(n - 1)
-}
-
-func TestStackTraceTruncated(t *testing.T) {
-	shallow := New("shallow")
-
-	assert.False(t, shallow.Truncated())
-	assert.NotContains(t, fmt.Sprintf("%+v", shallow), "...")
-
-	err := deep(maxFrames)
-
-	assert.True(t, err.Truncated())
-	assert.Length(t, err.StackTrace(), maxFrames)
-	assert.Length(t, slices.Collect(err.Frames()), maxFrames)
-	assert.True(t, strings.HasSuffix(fmt.Sprintf("%+v", err), "\n\t..."))
-
-	var nilErr *Error
-
-	assert.False(t, nilErr.Truncated())
-}
-
-func TestFrames(t *testing.T) {
-	frames := slices.Collect(New("test").Frames())
-
-	assert.NotEmpty(t, frames)
-	assert.Equal(t, frames[0].Function, "github.com/gravitton/errors.TestFrames")
-}
-
-func TestFramesBreak(t *testing.T) {
-	count := 0
-	for range New("test").Frames() {
-		count++
-
-		break
-	}
-
-	assert.Equal(t, count, 1)
-}
-
-func TestFormat(t *testing.T) {
-	err := New("test").WithField("action", "call").WithCause(errors.New("original"))
-
-	assert.Equal(t, fmt.Sprintf("%s", err), "test")
-	assert.Equal(t, fmt.Sprintf("%v", err), "test")
-	assert.Equal(t, fmt.Sprintf("%q", err), `"test"`)
-
-	details := fmt.Sprintf("%+v", err)
-
-	assert.Contains(t, details, "test")
-	assert.Contains(t, details, "action=call")
-	assert.Contains(t, details, "caused by: original")
-	assert.Contains(t, details, "github.com/gravitton/errors.TestFormat")
-	assert.Equal(t, fmt.Sprintf("%d", err), "%!d(string=test)")
-}
-
-func TestFormatNestedCause(t *testing.T) {
-	inner := New("inner").WithField("layer", 1)
-	outer := New("outer").WithField("layer", 0).WithCause(inner)
-
-	details := fmt.Sprintf("%+v", outer)
-
-	assert.Contains(t, details, "caused by: inner")
-	assert.Contains(t, details, "layer=1")
-	assert.Equal(t, strings.Count(details, "github.com/gravitton/errors.TestFormatNestedCause"), 2)
-	assert.Matches(t, details, `^outer\n\tlayer=0\n\t[^\n]+TestFormatNestedCause\n(\t[^\n]+\n)*caused by: inner\n\tlayer=1\n\t[^\n]+TestFormatNestedCause\n`)
-}
-
-func TestFormatDetailedUnderlying(t *testing.T) {
-	inner := New("inner").WithField("k", 1)
-	err := Wrap(Join(inner, io.EOF))
-
-	details := fmt.Sprintf("%+v", err)
-
-	assert.True(t, strings.HasPrefix(details, "2 errors occurred:\n\tinner\n\t\tk=1\n\t\tgithub.com/gravitton/errors.TestFormatDetailedUnderlying\n"))
-	assert.Contains(t, details, "\n\tEOF\n\tgithub.com/gravitton/errors.TestFormatDetailedUnderlying\n")
-}
-
-func TestFormatMultiWrapPrintsMessageOnly(t *testing.T) {
-	a := New("a").WithField("k", 1)
-	err := Wrap(fmt.Errorf("%w and %w", a, io.EOF))
-
-	details := fmt.Sprintf("%+v", err)
-
-	assert.True(t, strings.HasPrefix(details, "a and EOF\n\tgithub.com/gravitton/errors.TestFormatMultiWrapPrintsMessageOnly\n"))
-	assert.NotContains(t, details, "k=1")
-}
-
-func TestFormatFlags(t *testing.T) {
-	err := New("hello")
-
-	assert.Equal(t, fmt.Sprintf("[%10s]", err), "[     hello]")
-	assert.Equal(t, fmt.Sprintf("[%-10v]", err), "[hello     ]")
-	assert.Equal(t, fmt.Sprintf("[%.2s]", err), "[he]")
-	assert.Equal(t, fmt.Sprintf("%x", err), "68656c6c6f")
-	assert.Equal(t, fmt.Sprintf("%#q", err), "`hello`")
-}
-
-func TestFormatGoSyntax(t *testing.T) {
-	err := New("test").WithField("action", "call").WithCause(io.EOF)
-
-	assert.Equal(t, fmt.Sprintf("%#v", err), `&errors.Error{err:&errors.errorString{s:"test"}, data:map[string]interface {}{"action":"call"}, causes:[]error{(*errors.errorString)(`+fmt.Sprintf("%p", io.EOF)+`)}}`)
-
-	var nilErr *Error
-
-	assert.Equal(t, fmt.Sprintf("%#v", nilErr), "(*errors.Error)(nil)")
-	assert.Equal(t, fmt.Sprintf("%+#v", New("test")), `&errors.Error{err:&errors.errorString{s:"test"}, data:map[string]interface {}(nil), causes:[]error(nil)}`)
-}
-
-func TestFormatNil(t *testing.T) {
-	var err *Error
-
-	assert.Equal(t, fmt.Sprintf("%v", err), "<nil>")
-	assert.Equal(t, fmt.Sprintf("%+v", err), "<nil>")
+	assert.Equal(t, err.Fields(), map[string]any{"a": 1})
 }
 
 func TestWithCause(t *testing.T) {
-	err1 := New("test")
-	original := errors.New("original error")
+	original := New("test")
+	err := original.WithCause(io.EOF).WithCause(io.ErrClosedPipe)
 
-	err2 := err1.WithCause(original)
-
-	assert.NotSame(t, err1, err2)
-	assert.Equal(t, err2.Unwrap(), []error{err1.err, original})
-	assert.ErrorIs(t, err2, original)
-}
-
-func TestWithCauseAccumulates(t *testing.T) {
-	err := New("test").WithCause(io.EOF).WithCause(io.ErrUnexpectedEOF)
-
-	assert.Equal(t, err.Causes(), []error{io.EOF, io.ErrUnexpectedEOF})
-	assert.Equal(t, err.Unwrap(), []error{err.err, io.EOF, io.ErrUnexpectedEOF})
+	assert.Equal(t, err.Unwrap(), []error{original.Unwrap()[0], io.EOF, io.ErrClosedPipe})
+	assert.Equal(t, err.StackTrace(), original.StackTrace())
+	assert.Length(t, original.Unwrap(), 1)
 	assert.ErrorIs(t, err, io.EOF)
-	assert.ErrorIs(t, err, io.ErrUnexpectedEOF)
-
-	inherited := Newf("ctx: %w", err).WithCause(io.ErrClosedPipe)
-
-	assert.Equal(t, inherited.Causes(), []error{io.EOF, io.ErrUnexpectedEOF, io.ErrClosedPipe})
-	assert.Equal(t, err.Causes(), []error{io.EOF, io.ErrUnexpectedEOF})
-
-	details := fmt.Sprintf("%+v", err)
-
-	assert.Contains(t, details, "caused by: EOF\ncaused by: unexpected EOF")
+	assert.ErrorIs(t, err, io.ErrClosedPipe)
 }
 
 func TestWithCauseNil(t *testing.T) {
 	err := New("test")
 
 	assert.Same(t, err.WithCause(nil), err)
-	assert.Empty(t, err.Causes())
 }
 
-func TestCausesAreCopied(t *testing.T) {
-	err := New("test").WithCause(io.EOF)
+func TestWithCauseDoesNotShareCauses(t *testing.T) {
+	base := New("test").WithCause(io.EOF)
+	a := base.WithCause(io.ErrClosedPipe)
+	b := base.WithCause(io.ErrUnexpectedEOF)
 
-	causes := err.Causes()
-	causes[0] = io.ErrUnexpectedEOF
-
-	assert.Equal(t, err.Causes(), []error{io.EOF})
-
-	var nilErr *Error
-
-	assert.Empty(t, nilErr.Causes())
+	assert.Equal(t, a.Unwrap()[2], io.ErrClosedPipe)
+	assert.Equal(t, b.Unwrap()[2], io.ErrUnexpectedEOF)
 }
 
-func TestWithCauseKeepsWrappedError(t *testing.T) {
-	cause := errors.New("cause")
+func TestAsFindsCause(t *testing.T) {
+	cause := &fsError{}
+	err := New("test").WithCause(cause)
 
-	err1 := Wrap(io.EOF).WithCause(cause)
+	found, ok := AsType[*fsError](err)
 
-	assert.ErrorIs(t, err1, io.EOF)
-	assert.ErrorIs(t, err1, cause)
-
-	err2 := Newf("read: %w", io.EOF).WithCause(cause)
-
-	assert.ErrorIs(t, err2, io.EOF)
-	assert.ErrorIs(t, err2, cause)
+	assert.True(t, ok)
+	assert.Same(t, found, cause)
 }
 
-func TestErrorsIs(t *testing.T) {
-	original := errors.New("original error")
-	err1 := New("original error")
-
-	assert.NotErrorIs(t, err1, original)
-	assert.NotErrorIs(t, err1, New("original error"))
-	assert.ErrorIs(t, Wrap(original), Wrap(original))
-
-	err2 := Wrap(original)
-
-	assert.ErrorIs(t, err2, original)
-
-	err3 := err1.WithCause(original)
-
-	assert.ErrorIs(t, err3, original)
-
-	err4 := err2.WithField("action", "call")
-
-	assert.ErrorIs(t, err4, original)
+func TestIsSentinelDerived(t *testing.T) {
+	assert.ErrorIs(t, errSentinel, errSentinel)
+	assert.ErrorIs(t, errSentinel.WithField("id", 1), errSentinel)
+	assert.ErrorIs(t, errSentinel.WithCause(io.EOF), errSentinel)
+	assert.ErrorIs(t, Wrap(errSentinel), errSentinel)
+	assert.ErrorIs(t, Newf("outer: %w", errSentinel), errSentinel)
+	assert.ErrorIs(t, New("outer").WithCause(errSentinel), errSentinel)
+	assert.NotErrorIs(t, New("sentinel"), errSentinel)
 }
 
-func TestErrorsIsError(t *testing.T) {
-	err1 := New("test")
-	err2 := New("test2")
-	err3 := err1.WithFields(map[string]any{"action": "call", "type": "error"})
-	err4 := err1.WithFields(map[string]any{"type": "warn"})
+func TestIsIgnoresFields(t *testing.T) {
+	err := errSentinel.WithField("id", 42)
 
-	assert.NotErrorIs(t, err1, err2) // different error
-	assert.NotErrorIs(t, err1, err3) // additional fields
-	assert.NotErrorIs(t, err1, err4) // additional fields
-
-	assert.NotErrorIs(t, err2, err1) // different error
-	assert.NotErrorIs(t, err2, err3) // different error
-	assert.NotErrorIs(t, err2, err4) // different error
-
-	assert.ErrorIs(t, err3, err1)    // missing fields
-	assert.NotErrorIs(t, err3, err2) // different error
-	assert.NotErrorIs(t, err3, err4) // different fields
-
-	assert.ErrorIs(t, err4, err1)    // missing fields
-	assert.NotErrorIs(t, err4, err2) // different error
-	assert.NotErrorIs(t, err4, err3) // different fields
+	assert.ErrorIs(t, err, errSentinel.WithField("id", 7))
+	assert.ErrorIs(t, errSentinel, err)
 }
 
-func TestErrorsIsFieldsScopeDerivedOnly(t *testing.T) {
-	sentinel := New("sentinel")
-	target := sentinel.WithField("k", 1)
-
-	direct := New("other").WithCause(sentinel).WithField("k", 1)
-	layered := Newf("ctx: %w", New("other").WithCause(sentinel)).WithField("k", 1)
-	wrapped := Wrap(fmt.Errorf("ctx: %w", New("other").WithCause(sentinel))).WithField("k", 1)
-
-	assert.ErrorIs(t, direct, sentinel)
-	assert.ErrorIs(t, layered, sentinel)
-	assert.ErrorIs(t, wrapped, sentinel)
-
-	assert.NotErrorIs(t, direct, target)
-	assert.NotErrorIs(t, layered, target)
-	assert.NotErrorIs(t, wrapped, target)
-
-	assert.ErrorIs(t, Newf("ctx: %w", sentinel).WithField("k", 1), target)
-	assert.ErrorIs(t, New("other").WithCause(target), target)
+func TestIsStdError(t *testing.T) {
+	assert.ErrorIs(t, Wrap(io.EOF), io.EOF)
+	assert.ErrorIs(t, Wrap(fmt.Errorf("outer: %w", io.EOF)), io.EOF)
 }
 
-func TestErrorsIsFieldsNeverNarrow(t *testing.T) {
-	inner := New("inner").WithField("k", 1)
-	outer := Newf("ctx: %w", inner).WithField("k", 2)
+func TestFormat(t *testing.T) {
+	err := New("test").WithField("a", 1)
 
-	assert.Equal(t, outer.Fields(), map[string]any{"k": 2})
-	assert.ErrorIs(t, outer, inner.WithField("k", 2))
-	assert.ErrorIs(t, outer, inner.WithField("k", 1))
-	assert.NotErrorIs(t, outer, inner.WithField("k", 3))
+	assert.Equal(t, fmt.Sprintf("%s", err), "test")
+	assert.Equal(t, fmt.Sprintf("%v", err), "test")
+	assert.Equal(t, fmt.Sprintf("%q", err), `"test"`)
+	assert.Equal(t, fmt.Sprintf("[%6s]", err), "[  test]")
+	assert.Equal(t, fmt.Sprintf("%#v", err), `&errors.Error{err:&errors.errorString{s:"test"}, fields:map[string]interface {}{"a":1}, causes:[]error(nil)}`)
 }
 
-type customIs struct {
-	match error
+func TestFormatDetails(t *testing.T) {
+	err := New("test").WithField("b", 2).WithField("a", 1).WithCause(io.EOF)
+	details := fmt.Sprintf("%+v", err)
+
+	assert.True(t, strings.HasPrefix(details, "test\n\ta=1\n\tb=2\n\tgithub.com/gravitton/errors.TestFormatDetails\n\t\t"))
+	assert.True(t, strings.HasSuffix(details, "\ncaused by: EOF"))
 }
 
-func (e customIs) Error() string {
-	return "custom"
+func TestFormatDetailsNested(t *testing.T) {
+	inner := New("inner").WithField("a", 1).WithCause(io.EOF)
+	details := fmt.Sprintf("%+v", Newf("outer: %w", inner))
+
+	assert.True(t, strings.HasPrefix(details, "outer: inner\n\ta=1\n\tgithub.com/gravitton/errors.TestFormatDetailsNested\n"))
+	assert.Equal(t, strings.Count(details, "a=1"), 1)
+	assert.Equal(t, strings.Count(details, "TestFormatDetailsNested"), 1)
+	assert.True(t, strings.HasSuffix(details, "\ncaused by: EOF"))
 }
 
-func (e customIs) Is(target error) bool {
-	return target == e.match
+func TestFormatDetailsCollection(t *testing.T) {
+	details := fmt.Sprintf("%+v", Wrap(Join(New("a").WithField("a", 1), io.EOF)))
+
+	assert.True(t, strings.HasPrefix(details, "2 errors occurred:\n\ta\n\t\ta=1\n"))
 }
 
-func TestErrorsIsHonorsIsMethod(t *testing.T) {
-	sentinel := New("sentinel")
-	err := Wrap(customIs{match: sentinel.err}).WithField("k", 1)
-
-	assert.ErrorIs(t, err, sentinel)
-	assert.ErrorIs(t, err, sentinel.WithField("k", 1))
-	assert.NotErrorIs(t, err, sentinel.WithField("k", 2))
-}
-
-func TestErrorsIsInspectsOnlyTarget(t *testing.T) {
-	sentinel := New("sentinel")
-
-	assert.NotErrorIs(t, sentinel, fmt.Errorf("wrapped: %w", sentinel))
-	assert.NotErrorIs(t, sentinel, Join(errors.New("other"), sentinel))
-	assert.NotErrorIs(t, sentinel, New("other").WithCause(sentinel))
-	assert.NotErrorIs(t, sentinel, Newf("wrapped: %w", sentinel))
-	assert.ErrorIs(t, New("other").WithCause(sentinel), sentinel)
-	assert.ErrorIs(t, sentinel, sentinel.WithCause(io.EOF))
+func TestFormatDetailsSentinel(t *testing.T) {
+	assert.Equal(t, fmt.Sprintf("%+v", errSentinel.WithField("a", 1)), "sentinel\n\ta=1")
 }

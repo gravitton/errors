@@ -30,12 +30,6 @@ func TestWrapIs(t *testing.T) {
 	assert.True(t, Is(outer, inner))
 	assert.False(t, Is(outer, errors.New("other")))
 	assert.False(t, Is(nil, inner))
-
-	var err *Error
-	assert.False(t, Is(err, inner))
-
-	var errs *MultiError
-	assert.False(t, Is(errs, inner))
 }
 
 func TestWrapAs(t *testing.T) {

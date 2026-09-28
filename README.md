@@ -23,10 +23,10 @@ Structured errors with fields, causes, and stack traces, plus a concurrent-safe 
 
 ## Features
 
-- **Drop-in replacement** for the standard `errors` package – swap the import, keep every call site.
-- **Fields** – key-value context attached to an error, matched by `Is`.
+- **Drop-in replacement** for the standard `errors` package – swap the import, keep `New`, `Is`, `As` and `AsType`.
+- **Fields** – key-value context added at any layer, merged along the chain.
 - **Causes** – previous errors attached with `WithCause`, all visible to `Is` and `As`.
-- **Stack traces** captured where the error is raised, printed with `%+v`, or walked with `Frames`.
+- **Stack traces** captured where the error is raised, printed with `%+v`, and reused when the error is wrapped.
 - **Immutable** – every `With*` method returns a new error.
 - **Multi error** – concurrent-safe collection of errors as a single `error`, with `Join` on top.
 
@@ -46,46 +46,52 @@ go get github.com/gravitton/errors
 Creating and wrapping:
 
 ```go
-var ErrNotFound = errors.Sentinel("not found")  // no stack trace, captured when first wrapped
+var ErrNotFound = errors.Sentinel("not found")  // no stack trace, captured when wrapped
 
 err := errors.New("boom")                       // *Error with a stack trace
 err = errors.Newf("user %d missing", 42)
-err = errors.Wrap(io.EOF)                       // an *Error with a stack trace is returned unchanged
+err = errors.Wrap(io.EOF)                       // *Error with a stack trace around io.EOF
+err = errors.Wrap(err)                          // an *Error with a stack trace is returned unchanged
 ```
 
-Adding context keeps everything the error already carries:
+Use `Sentinel`, not `New`, for package-level errors: `New` captures the stack where it is called, and at package
+initialisation that stack points nowhere useful.
+
+Adding context at every layer keeps what was added before:
 
 ```go
-err := ErrNotFound.WithField("id", 42)   // still no stack trace
-err = errors.Wrap(err)                   // the stack trace is captured here
-err = errors.Newf("load user: %w", err)  // fields, cause and stack are inherited
-err = errors.Wrap(fmt.Errorf("handler: %w", err))
+err := errors.Wrap(ErrNotFound.WithField("id", 42)) // the stack trace is captured here
+err = errors.Newf("load user: %w", err)             // the stack trace is reused
+err = errors.Wrap(fmt.Errorf("handler: %w", err)).WithField("handler", "users")
 
-err.Fields()                                    // map[id:42]
-errors.Is(err, ErrNotFound.WithField("id", 42)) // true
+err.Fields()                // map[handler:users id:42]
+errors.Is(err, ErrNotFound) // true
 ```
 
-Fields and causes:
+Causes, the error that caused this one or one that happened while handling it:
 
 ```go
-err := ErrNotFound.WithField("id", 42)
-err = err.WithFields(map[string]any{"table": "users", "attempt": 3})
-err = err.WithCause(io.ErrUnexpectedEOF)
-
-err = err.WithCause(io.ErrClosedPipe)
-
-err.Fields()                        // map[attempt:3 id:42 table:users], a copy
-err.Causes()                        // [unexpected EOF, io: read/write on closed pipe], a copy
-errors.Is(err, io.ErrUnexpectedEOF) // true, every cause is in the chain
+if err := load(); err != nil {
+	return errors.New("could not load config").WithCause(err)
+}
 ```
 
-Sentinels match through fields, so declare them once and derive from them:
+```go
+if err := write(f); err != nil {
+	if closeErr := f.Close(); closeErr != nil {
+		return errors.Wrap(err).WithCause(closeErr)
+	}
+
+	return err
+}
+```
+
+Fields are data about one occurrence, not part of the error's identity:
 
 ```go
-errors.Is(err, ErrNotFound)                     // true
-errors.Is(err, ErrNotFound.WithField("id", 42)) // true, fields are matched too
-errors.Is(err, ErrNotFound.WithField("id", 7))  // false
-errors.Is(err, errors.New("not found"))         // false, a different error with the same text
+errors.Is(err, ErrNotFound)                    // true
+errors.Is(err, ErrNotFound.WithField("id", 7)) // true, fields are not compared
+errors.Is(err, errors.New("not found"))        // false, a different error with the same text
 ```
 
 Check the error before wrapping it, never after:
@@ -127,13 +133,11 @@ return errs.ErrorOrNil()
 ```
 
 ```go
-errors.Join(nil, nil)        // nil
-errors.Join(errA, errB)      // *MultiError, "2 errors occurred:\n\terrA\n\terrB"
-errs.Len()                   // 2
-errors.Is(errs, errA)        // true, every collected error is inspected
+errors.Join(nil, nil)   // nil
+errors.Join(errA, errB) // *MultiError, "2 errors occurred:\n\terrA\n\terrB"
 ```
 
-Printing, the message alone with `%v`, or the fields, the stack trace and the cause with `%+v`:
+Printing, the message alone with `%v`, or the fields, the stack trace and the causes with `%+v`:
 
 ```go
 fmt.Printf("%+v", err)
@@ -144,76 +148,18 @@ fmt.Printf("%+v", err)
 // caused by: connection refused
 ```
 
-A multi error prints every collected error the same way:
-
-```go
-fmt.Printf("%+v", errs)
-// 2 errors occurred:
-//	process failed
-//		process=abc
-//		main.Process
-//			/app/main.go:14
-//	connection refused
-```
-
-Walking the captured stack:
-
-```go
-for frame := range err.Frames() {
-	fmt.Println(frame.Function, frame.File, frame.Line)
-}
-```
-
 Full reference: [pkg.go.dev][link-go-dev-reference].
 
 ## Conventions
 
-**Standard library:** `Unwrap`, `Is`, `As`, `AsType` and `ErrUnsupported` are re-exported unchanged. `New` returns an
-`*Error` instead of an `error`. `Join` returns an `error` whose dynamic type is `*MultiError`, and with two or more
-errors its message is a numbered summary rather than the errors joined by newlines.
-
-**Unwrapping:** `Error` and `MultiError` both implement `Unwrap() []error`, so `errors.Unwrap` returns `nil` for them.
-Use `Is` and `As` to inspect the chain. An `Error` unwraps to its underlying error followed by its causes in the order
-they were attached, so attaching a cause never hides the wrapped error nor an earlier cause. `WithCause(nil)` attaches
-nothing.
-
-**Equality:** Two `*Error` values match under `Is` when the underlying error of the target is found in the chain of
-the underlying error of the inspected error, and every field of the target is present in the inspected error with the
-same value. That chain never enters a cause, so fields only scope the errors they were added to or derived from; a
-sentinel attached with `WithCause` is still found, but only with its own fields. Only the target itself is inspected,
-never its cause nor the errors it wraps. Field values of different types never match, uncomparable values fall back
-to `reflect.DeepEqual`, and an underlying error of an uncomparable type never matches. Fields can widen a match but
-never narrow one: `errors.Is` keeps unwrapping into the errors the inspected one was derived from, and those still
-carry the values they had at the time, so an error that overrides a field matches a target holding either the new or
-the previous value.
-
-**Typed nil:** `Wrap` returns `*Error` so that fields can be chained onto it. `Wrap(nil)` therefore returns a typed nil
-pointer, which is not equal to `nil` once stored in an `error`. `Wrap` treats a typed nil argument, such as a nil
-`*MultiError`, the same as `nil`. Chaining `WithField`, `WithFields` or `WithCause` on it
-is safe and yields `nil` again, but the result must not be returned as an `error`.
-
-**Formatting:** `%s`, `%q`, `%x` and `%v` print the message and honor width, precision, and flags. `%+v` prints the
-underlying error with `%+v`, so a wrapped `MultiError` shows its members in full, then the fields sorted by key, the
-stack trace innermost call first, and every cause formatted with `%+v` as well. An error reached only through a
-wrapper without a `Format` method, such as one from `fmt.Errorf` with several `%w` verbs, prints its message alone.
-`%#v` prints the error in Go syntax. `MultiError` prints its summary the same way, and with `%+v` every collected
-error is formatted with `%+v` in turn.
-
-**Stack traces:** `New`, `Newf` and `Wrap` capture up to 32 program counters above the caller; when the stack is deeper
-the outermost calls are dropped, `Truncated` reports it and `%+v` ends the trace with `...`. `StackTrace` returns a copy,
-and `Frames` may yield more frames than program counters when calls were inlined. `Sentinel` captures nothing, so
-a package-level error does not point at package initialization; instead the first `Wrap` or `Newf` applied to a
-stackless error captures the stack there, where the error is raised. `WithField`, `WithFields` and `WithCause` never
-capture a stack: they keep the stack of the error they derive from, or its absence, so a sentinel scoped by fields is
-still a sentinel. When `Wrap` or `Newf` with `%w` reach an `*Error` by
-unwrapping one error at a time, they inherit its fields, cause, and stack instead of capturing a new one, so context
-can be added at every layer without losing anything. An error wrapping several errors at once, such as a
-`MultiError`, is never entered, so nothing is inherited from one of its members.
-
-**Multi error:** `Add` skips `nil` errors, typed `nil` values, and the collection itself, `Unwrap` returns a copy
-safe to modify, and all methods are safe for concurrent use. A `nil` `*MultiError` reads as an empty collection,
-prints as `<nil>`, and `Add` panics on it. A single collected error reports its message unchanged. `ErrorOrNil` is the only way to obtain a
-`nil` `error` from a collection, so return it rather than the `*MultiError` itself.
+- **Standard library:** `Unwrap`, `Is`, `As`, `AsType` and `ErrUnsupported` are re-exported. `errors.Unwrap` returns
+  `nil` for an `*Error`, since it unwraps to its underlying error and its causes; use `Is` and `As`.
+- **Main chain:** fields and stack traces are looked up through single-error wrappers only, never through causes or
+  errors wrapping several errors, such as a `MultiError`.
+- **Stack traces:** `New`, `Newf` and `Wrap` reuse the stack trace of the first `*Error` in the main chain that has
+  one, otherwise they capture up to 32 frames. `StackTrace` returns the program counters, so Sentry picks them up.
+- **Typed nil:** `Wrap(nil)` returns a nil `*Error`, which is not `nil` once stored in an `error`.
+- **Multi error:** use `ErrorOrNil` to return a collection as an `error`.
 
 ## Credits
 
