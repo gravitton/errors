@@ -78,7 +78,7 @@ func (e *MultiError) Format(s fmt.State, verb rune) {
 
 // GoString returns the collection in Go syntax.
 func (e *MultiError) GoString() string {
-	return fmt.Sprintf("&errors.MultiError{errs:%#v}", e.Unwrap())
+	return fmt.Sprintf("&errors.MultiError{errs:%s}", goSyntax(e.Unwrap()))
 }
 
 func (e *MultiError) details() string {
@@ -99,12 +99,8 @@ func (e *MultiError) render(text func(error) string) string {
 
 	lines := make([]string, len(errs))
 	for i, err := range errs {
-		lines[i] = indent(text(err))
+		lines[i] = "\t" + indent(text(err))
 	}
 
 	return fmt.Sprintf("%d errors occurred:\n%s", len(errs), strings.Join(lines, "\n"))
-}
-
-func indent(text string) string {
-	return "\t" + strings.ReplaceAll(text, "\n", "\n\t")
 }

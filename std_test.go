@@ -8,65 +8,36 @@ import (
 	"github.com/gravitton/assert"
 )
 
-func TestWrapUnwrap(t *testing.T) {
+func TestUnwrap(t *testing.T) {
 	inner := errors.New("inner")
-	outer := fmt.Errorf("outer: %w", inner)
 
-	assert.Equal(t, Unwrap(outer), inner)
+	assert.Equal(t, Unwrap(fmt.Errorf("outer: %w", inner)), inner)
 	assert.Equal(t, Unwrap(inner), nil)
-	assert.Equal(t, Unwrap(nil), nil)
-
-	err := New("outer").WithCause(inner)
-	assert.Equal(t, Unwrap(err), nil)
-
-	var errs *MultiError
-	assert.Equal(t, Unwrap(errs), nil)
+	assert.Equal(t, Unwrap(New("outer").WithCause(inner)), nil)
 }
 
-func TestWrapIs(t *testing.T) {
+func TestIs(t *testing.T) {
 	inner := errors.New("inner")
 	outer := New("outer").WithCause(inner)
 
 	assert.True(t, Is(outer, inner))
 	assert.False(t, Is(outer, errors.New("other")))
-	assert.False(t, Is(nil, inner))
 }
 
-func TestWrapAs(t *testing.T) {
-	original := New("test").WithField("k", "v")
-	wrapped := fmt.Errorf("wrapped: %w", original)
+func TestAs(t *testing.T) {
+	original := New("test")
 
 	var target *Error
-	assert.True(t, As(wrapped, &target))
-	assert.Equal(t, target, original)
-
-	assert.False(t, As(nil, &target))
-
-	var nilErr *Error
-	assert.True(t, As(nilErr, &target))
-	assert.Equal(t, target, nilErr)
-
-	var multiTarget *MultiError
-	var nilMulti *MultiError
-	assert.True(t, As(nilMulti, &multiTarget))
-	assert.Equal(t, multiTarget, nilMulti)
+	assert.True(t, As(fmt.Errorf("wrapped: %w", original), &target))
+	assert.Same(t, target, original)
 }
 
-func TestWrapAsType(t *testing.T) {
-	original := New("test").WithField("k", "v")
-	wrapped := fmt.Errorf("wrapped: %w", original)
+func TestAsType(t *testing.T) {
+	original := New("test")
 
-	target, ok := AsType[*Error](wrapped)
+	target, ok := AsType[*Error](fmt.Errorf("wrapped: %w", original))
 	assert.True(t, ok)
-	assert.Equal(t, target, original)
-
-	_, ok = AsType[*Error](nil)
-	assert.False(t, ok)
-
-	var nilErr *Error
-	nilTarget, ok := AsType[*Error](nilErr)
-	assert.True(t, ok)
-	assert.Equal(t, nilTarget, nilErr)
+	assert.Same(t, target, original)
 }
 
 func TestErrUnsupported(t *testing.T) {

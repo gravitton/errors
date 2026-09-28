@@ -86,10 +86,9 @@ func TestWrapErrorWithStack(t *testing.T) {
 }
 
 func TestWrapSentinel(t *testing.T) {
-	err := Wrap(errSentinel.WithField("id", 1))
+	err := Wrap(errSentinel)
 
 	assert.Equal(t, raisedIn(err), "TestWrapSentinel")
-	assert.Equal(t, err.Fields(), map[string]any{"id": 1})
 	assert.ErrorIs(t, err, errSentinel)
 	assert.Empty(t, errSentinel.StackTrace())
 }
@@ -138,6 +137,21 @@ func TestWithFields(t *testing.T) {
 	err := New("test").WithField("a", 1).WithFields(map[string]any{"a": 2, "b": 3})
 
 	assert.Equal(t, err.Fields(), map[string]any{"a": 2, "b": 3})
+}
+
+func TestWithFieldsCopiesMap(t *testing.T) {
+	fields := map[string]any{"a": 1}
+	err := New("test").WithFields(fields)
+	fields["a"] = 2
+
+	assert.Equal(t, err.Fields(), map[string]any{"a": 1})
+}
+
+func TestDerivedSentinelCapturesStack(t *testing.T) {
+	assert.Equal(t, raisedIn(errSentinel.WithField("a", 1)), "TestDerivedSentinelCapturesStack")
+	assert.Equal(t, raisedIn(errSentinel.WithFields(map[string]any{"a": 1})), "TestDerivedSentinelCapturesStack")
+	assert.Equal(t, raisedIn(errSentinel.WithCause(io.EOF)), "TestDerivedSentinelCapturesStack")
+	assert.Empty(t, errSentinel.StackTrace())
 }
 
 func TestFieldsMergeMainChain(t *testing.T) {
@@ -228,15 +242,24 @@ func TestFormat(t *testing.T) {
 	assert.Equal(t, fmt.Sprintf("%v", err), "test")
 	assert.Equal(t, fmt.Sprintf("%q", err), `"test"`)
 	assert.Equal(t, fmt.Sprintf("[%6s]", err), "[  test]")
-	assert.Equal(t, fmt.Sprintf("%#v", err), `&errors.Error{err:&errors.errorString{s:"test"}, fields:map[string]interface {}{"a":1}, causes:[]error(nil)}`)
+	assert.Equal(t, fmt.Sprintf("%#v", err), `&errors.Error{err:&errors.errorString{s:"test"}, fields:map[string]interface {}{"a":1}, causes:[]error{}}`)
+	assert.Equal(t, fmt.Sprintf("%#v", errSentinel.WithCause(io.EOF)), `&errors.Error{err:&errors.errorString{s:"sentinel"}, fields:map[string]interface {}(nil), causes:[]error{&errors.errorString{s:"EOF"}}}`)
 }
 
 func TestFormatDetails(t *testing.T) {
-	err := New("test").WithField("b", 2).WithField("a", 1).WithCause(io.EOF)
+	err := New("test").WithField("b", 2).WithField("a", 1).WithCause(io.EOF).WithCause(io.ErrClosedPipe)
 	details := fmt.Sprintf("%+v", err)
 
 	assert.True(t, strings.HasPrefix(details, "test\n\ta=1\n\tb=2\n\tgithub.com/gravitton/errors.TestFormatDetails\n\t\t"))
-	assert.True(t, strings.HasSuffix(details, "\ncaused by: EOF"))
+	assert.True(t, strings.HasSuffix(details, "\ncaused by: EOF\ncaused by: io: read/write on closed pipe"))
+}
+
+func TestFormatDetailsNestedCauses(t *testing.T) {
+	err := New("root").WithCause(New("a").WithCause(io.EOF)).WithCause(io.ErrClosedPipe)
+	details := fmt.Sprintf("%+v", err)
+
+	assert.True(t, strings.Contains(details, "\ncaused by: a\n\t\tgithub.com/gravitton/errors.TestFormatDetailsNestedCauses\n\t\t\t"))
+	assert.True(t, strings.HasSuffix(details, "\n\tcaused by: EOF\ncaused by: io: read/write on closed pipe"))
 }
 
 func TestFormatDetailsNested(t *testing.T) {
@@ -256,5 +279,5 @@ func TestFormatDetailsUnderlyingMessageOnly(t *testing.T) {
 }
 
 func TestFormatDetailsSentinel(t *testing.T) {
-	assert.Equal(t, fmt.Sprintf("%+v", errSentinel.WithField("a", 1)), "sentinel\n\ta=1")
+	assert.Equal(t, fmt.Sprintf("%+v", errSentinel), "sentinel")
 }

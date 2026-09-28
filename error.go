@@ -26,14 +26,14 @@ func New(text string) *Error {
 }
 
 // Sentinel creates an Error without a stack trace, meant for package-level errors.
-// The stack trace is captured where it is passed to Wrap or wrapped by Newf.
+// The stack trace is captured where the error is derived or wrapped.
 func Sentinel(text string) *Error {
 	return &Error{
 		err: errors.New(text),
 	}
 }
 
-// Newf creates an Error from fmt.Errorf, like Wrap does.
+// Newf formats an error with fmt.Errorf and wraps it like Wrap does.
 func Newf(format string, args ...any) *Error {
 	return wrap(fmt.Errorf(format, args...))
 }
@@ -101,13 +101,19 @@ func (e *Error) Fields() map[string]any {
 	return fields
 }
 
-// WithField returns a copy of the error with the field added.
+// WithField returns a copy of the error with the field added. A copy of an error
+// without a stack trace gets the current one.
 func (e *Error) WithField(key string, value any) *Error {
-	return e.WithFields(map[string]any{key: value})
+	return wrap(e).withFields(map[string]any{key: value})
 }
 
-// WithFields returns a copy of the error with the fields added.
+// WithFields returns a copy of the error with the fields added. A copy of an error
+// without a stack trace gets the current one.
 func (e *Error) WithFields(fields map[string]any) *Error {
+	return wrap(e).withFields(fields)
+}
+
+func (e *Error) withFields(fields map[string]any) *Error {
 	derived := *e
 	derived.fields = make(map[string]any, len(e.fields)+len(fields))
 	maps.Copy(derived.fields, e.fields)
@@ -116,14 +122,14 @@ func (e *Error) WithFields(fields map[string]any) *Error {
 	return &derived
 }
 
-// WithCause returns a copy of the error with the cause appended. A nil cause
-// returns the error unchanged.
+// WithCause returns a copy of the error with the cause appended. A copy of an error
+// without a stack trace gets the current one. A nil cause returns the error unchanged.
 func (e *Error) WithCause(cause error) *Error {
 	if cause == nil {
 		return e
 	}
 
-	derived := *e
+	derived := *wrap(e)
 	derived.causes = append(slices.Clip(e.causes), cause)
 
 	return &derived
@@ -143,7 +149,7 @@ func (e *Error) Format(s fmt.State, verb rune) {
 
 // GoString returns the error in Go syntax.
 func (e *Error) GoString() string {
-	return fmt.Sprintf("&errors.Error{err:%#v, fields:%#v, causes:%#v}", e.err, e.fields, e.causes)
+	return fmt.Sprintf("&errors.Error{err:%#v, fields:%#v, causes:%s}", e.err, e.fields, goSyntax(e.causes))
 }
 
 func (e *Error) details() string {
@@ -161,7 +167,7 @@ func (e *Error) details() string {
 
 	for inner := range mainChain(e) {
 		for _, cause := range inner.causes {
-			fmt.Fprintf(b, "\ncaused by: %+v", cause)
+			fmt.Fprintf(b, "\ncaused by: %s", indent(fmt.Sprintf("%+v", cause)))
 		}
 	}
 

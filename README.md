@@ -46,7 +46,7 @@ go get github.com/gravitton/errors
 Creating and wrapping:
 
 ```go
-var ErrNotFound = errors.Sentinel("not found")  // no stack trace, captured when wrapped
+var ErrNotFound = errors.Sentinel("not found")  // no stack trace, captured when derived or wrapped
 
 err := errors.New("boom")                       // *Error with a stack trace
 err = errors.Newf("user %d missing", 42)
@@ -55,13 +55,14 @@ err = errors.Wrap(err)                          // an *Error with a stack trace 
 ```
 
 Use `Sentinel`, not `New`, for package-level errors: `New` captures the stack where it is called, and at package
-initialisation that stack points nowhere useful.
+initialisation that stack points nowhere useful. For the same reason, don't derive package-level errors with
+`WithField` or `WithCause`.
 
 Adding context at every layer keeps what was added before:
 
 ```go
-err := errors.Wrap(ErrNotFound.WithField("id", 42)) // the stack trace is captured here
-err = errors.Newf("load user: %w", err)             // the stack trace is reused
+err := ErrNotFound.WithField("id", 42)  // the stack trace is captured here
+err = errors.Newf("load user: %w", err) // the stack trace is reused
 err = errors.Wrap(fmt.Errorf("handler: %w", err)).WithField("handler", "users")
 
 err.Fields()                // map[handler:users id:42]
@@ -146,8 +147,16 @@ fmt.Printf("%+v", err)
 //	process=abc
 //	main.Process
 //		/app/main.go:14
-// caused by: connection refused
+// caused by: could not dial
+//		main.dial
+//			/app/main.go:27
+//	caused by: connection refused
 ```
+
+Each cause is indented one level, so the cause of a cause is told apart from its siblings.
+
+`%+v` only reaches the fields and the stack trace when the outermost error is an `*Error`: `fmt.Errorf` does not
+implement `fmt.Formatter`, so `fmt.Errorf("handler: %w", err)` prints the message alone. Wrap it, or use `Newf`.
 
 Full reference: [pkg.go.dev][link-go-dev-reference].
 
