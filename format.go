@@ -24,6 +24,10 @@ func format(e detailed, s fmt.State, verb rune) {
 }
 
 func goSyntax(errs []error) string {
+	if errs == nil {
+		return "[]error(nil)"
+	}
+
 	items := make([]string, len(errs))
 	for i, err := range errs {
 		items[i] = fmt.Sprintf("%#v", err)
@@ -32,6 +36,25 @@ func goSyntax(errs []error) string {
 	return "[]error{" + strings.Join(items, ", ") + "}"
 }
 
-func indent(text string) string {
-	return strings.ReplaceAll(text, "\n", "\n\t")
+func block(head string, children ...string) string {
+	b := &strings.Builder{}
+	b.WriteString(hang(head))
+
+	for _, child := range children {
+		b.WriteString("\n\t")
+		b.WriteString(strings.ReplaceAll(hang(child), "\n", "\n\t"))
+	}
+
+	return b.String()
+}
+
+func hang(text string) string {
+	lines := strings.Split(text, "\n")
+	for i, line := range lines[1:] {
+		if !strings.HasPrefix(line, "\t") {
+			lines[i+1] = "\t" + line
+		}
+	}
+
+	return strings.Join(lines, "\n")
 }

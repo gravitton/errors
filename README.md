@@ -136,7 +136,7 @@ return errs.ErrorOrNil()
 
 ```go
 errors.Join(nil, nil)   // nil
-errors.Join(errA, errB) // *MultiError, "2 errors occurred:\n\terrA\n\terrB"
+errors.Join(errA, errB) // *MultiError, "2 errors occurred:\n\t1. errA\n\t2. errB"
 ```
 
 Printing, the message alone with `%v`, or the fields, the stack trace and the causes with `%+v`:
@@ -147,13 +147,14 @@ fmt.Printf("%+v", err)
 //	process=abc
 //	main.Process
 //		/app/main.go:14
-// caused by: could not dial
+//	caused by: could not dial
 //		main.dial
 //			/app/main.go:27
-//	caused by: connection refused
+//		caused by: connection refused
 ```
 
-Each cause is indented one level, so the cause of a cause is told apart from its siblings.
+Every line is indented one level deeper than the line it belongs to: fields, frames and causes under their error,
+members of a `MultiError` under its header, and the continuation lines of a multi-line message under its first line.
 
 `%+v` only reaches the fields and the stack trace when the outermost error is an `*Error`: `fmt.Errorf` does not
 implement `fmt.Formatter`, so `fmt.Errorf("handler: %w", err)` prints the message alone. Wrap it, or use `Newf`.
@@ -163,7 +164,10 @@ Full reference: [pkg.go.dev][link-go-dev-reference].
 ## Conventions
 
 - **Standard library:** `Unwrap`, `Is`, `As`, `AsType` and `ErrUnsupported` are re-exported. `errors.Unwrap` returns
-  `nil` for an `*Error`, since it unwraps to its underlying error and its causes; use `Is` and `As`.
+  `nil` for an `*Error`, since it unwraps to its underlying error and its causes; use `Is` and `As`. `New` returns
+  `*Error`, so `err := errors.New("x")` declares an `*Error` that can't be assigned a plain `error` later. After
+  swapping the import, turn package-level `New` errors into `Sentinel`s, or they report package initialization as
+  their stack trace.
 - **Wrapping:** `Wrap`, `Newf` and `Fields` look for inner `*Error` values through single-error wrappers only, never
   through causes or errors wrapping several errors, such as a `MultiError`. The first stack trace found is reused,
   otherwise up to 32 frames are captured.

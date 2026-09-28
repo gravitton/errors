@@ -40,6 +40,21 @@ func raisedIn(err *Error) string {
 	return strings.TrimPrefix(frame.Function, "github.com/gravitton/errors.")
 }
 
+func stackAt(err *Error, level int) string {
+	b := &strings.Builder{}
+	indent := strings.Repeat("\t", level)
+
+	frames := runtime.CallersFrames(err.StackTrace())
+	for {
+		frame, more := frames.Next()
+		fmt.Fprintf(b, "\n%s%s\n%s\t%s:%d", indent, frame.Function, indent, frame.File, frame.Line)
+
+		if !more {
+			return b.String()
+		}
+	}
+}
+
 func TestNew(t *testing.T) {
 	err := New("test")
 
@@ -242,40 +257,53 @@ func TestFormat(t *testing.T) {
 	assert.Equal(t, fmt.Sprintf("%v", err), "test")
 	assert.Equal(t, fmt.Sprintf("%q", err), `"test"`)
 	assert.Equal(t, fmt.Sprintf("[%6s]", err), "[  test]")
-	assert.Equal(t, fmt.Sprintf("%#v", err), `&errors.Error{err:&errors.errorString{s:"test"}, fields:map[string]interface {}{"a":1}, causes:[]error{}}`)
+}
+
+func TestFormatGoSyntax(t *testing.T) {
+	assert.Equal(t, fmt.Sprintf("%#v", New("test").WithField("a", 1)), `&errors.Error{err:&errors.errorString{s:"test"}, fields:map[string]interface {}{"a":1}, causes:[]error(nil)}`)
 	assert.Equal(t, fmt.Sprintf("%#v", errSentinel.WithCause(io.EOF)), `&errors.Error{err:&errors.errorString{s:"sentinel"}, fields:map[string]interface {}(nil), causes:[]error{&errors.errorString{s:"EOF"}}}`)
+}
+
+func TestFormatGoSyntaxForeignWrapper(t *testing.T) {
+	assert.Contains(t, fmt.Sprintf("%#v", Newf("outer: %w", io.EOF)), `&errors.Error{err:&fmt.wrapError{msg:"outer: EOF", err:(*errors.errorString)(0x`)
 }
 
 func TestFormatDetails(t *testing.T) {
 	err := New("test").WithField("b", 2).WithField("a", 1).WithCause(io.EOF).WithCause(io.ErrClosedPipe)
-	details := fmt.Sprintf("%+v", err)
 
-	assert.True(t, strings.HasPrefix(details, "test\n\ta=1\n\tb=2\n\tgithub.com/gravitton/errors.TestFormatDetails\n\t\t"))
-	assert.True(t, strings.HasSuffix(details, "\ncaused by: EOF\ncaused by: io: read/write on closed pipe"))
+	assert.Equal(t, fmt.Sprintf("%+v", err), "test\n\ta=1\n\tb=2"+stackAt(err, 1)+"\n\tcaused by: EOF\n\tcaused by: io: read/write on closed pipe")
 }
 
 func TestFormatDetailsNestedCauses(t *testing.T) {
-	err := New("root").WithCause(New("a").WithCause(io.EOF)).WithCause(io.ErrClosedPipe)
-	details := fmt.Sprintf("%+v", err)
+	cause := New("a").WithCause(io.EOF)
+	err := New("root").WithCause(cause).WithCause(io.ErrClosedPipe)
 
-	assert.True(t, strings.Contains(details, "\ncaused by: a\n\t\tgithub.com/gravitton/errors.TestFormatDetailsNestedCauses\n\t\t\t"))
-	assert.True(t, strings.HasSuffix(details, "\n\tcaused by: EOF\ncaused by: io: read/write on closed pipe"))
+	assert.Equal(t, fmt.Sprintf("%+v", err), "root"+stackAt(err, 1)+"\n\tcaused by: a"+stackAt(cause, 2)+"\n\t\tcaused by: EOF\n\tcaused by: io: read/write on closed pipe")
 }
 
 func TestFormatDetailsNested(t *testing.T) {
 	inner := New("inner").WithField("a", 1).WithCause(io.EOF)
-	details := fmt.Sprintf("%+v", Newf("outer: %w", inner))
 
-	assert.True(t, strings.HasPrefix(details, "outer: inner\n\ta=1\n\tgithub.com/gravitton/errors.TestFormatDetailsNested\n"))
-	assert.Equal(t, strings.Count(details, "a=1"), 1)
-	assert.Equal(t, strings.Count(details, "TestFormatDetailsNested"), 1)
-	assert.True(t, strings.HasSuffix(details, "\ncaused by: EOF"))
+	assert.Equal(t, fmt.Sprintf("%+v", Newf("outer: %w", inner)), "outer: inner\n\ta=1"+stackAt(inner, 1)+"\n\tcaused by: EOF")
 }
 
-func TestFormatDetailsUnderlyingMessageOnly(t *testing.T) {
-	details := fmt.Sprintf("%+v", Wrap(&detailedError{}))
+func TestFormatDetailsUnderlying(t *testing.T) {
+	err := Wrap(&detailedError{})
 
-	assert.True(t, strings.HasPrefix(details, "detailed\n\tgithub.com/gravitton/errors.TestFormatDetailsUnderlyingMessageOnly\n"))
+	assert.Equal(t, fmt.Sprintf("%+v", err), "detailed with details"+stackAt(err, 1))
+}
+
+func TestFormatDetailsUnderlyingCollection(t *testing.T) {
+	member := New("a").WithField("x", 1)
+	err := Wrap(Join(member, io.EOF)).WithField("k", 2)
+
+	assert.Equal(t, fmt.Sprintf("%+v", err), "2 errors occurred:\n\t1. a\n\t\tx=1"+stackAt(member, 2)+"\n\t2. EOF\n\tk=2"+stackAt(err, 1))
+}
+
+func TestFormatDetailsMultiline(t *testing.T) {
+	err := New("line one\nline two").WithField("a", "value one\nvalue two").WithCause(Join(io.EOF, io.ErrClosedPipe))
+
+	assert.Equal(t, fmt.Sprintf("%+v", err), "line one\n\tline two\n\ta=value one\n\t\tvalue two"+stackAt(err, 1)+"\n\tcaused by: 2 errors occurred:\n\t\t1. EOF\n\t\t2. io: read/write on closed pipe")
 }
 
 func TestFormatDetailsSentinel(t *testing.T) {

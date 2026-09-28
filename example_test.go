@@ -18,7 +18,7 @@ func ExampleNew() {
 	// Output:
 	// boom
 	// "boom"
-	// &errors.Error{err:&errors.errorString{s:"boom"}, fields:map[string]interface {}(nil), causes:[]error{}}
+	// &errors.Error{err:&errors.errorString{s:"boom"}, fields:map[string]interface {}(nil), causes:[]error(nil)}
 }
 
 func ExampleNewf() {
@@ -36,7 +36,7 @@ func ExampleWrap() {
 	fmt.Printf("%#v\n", err)
 	// Output:
 	// EOF
-	// &errors.Error{err:&errors.errorString{s:"EOF"}, fields:map[string]interface {}(nil), causes:[]error{}}
+	// &errors.Error{err:&errors.errorString{s:"EOF"}, fields:map[string]interface {}(nil), causes:[]error(nil)}
 }
 
 func ExampleError_Fields() {
@@ -59,7 +59,7 @@ func ExampleError_WithCause() {
 	fmt.Printf("%#v\n", err)
 	// Output:
 	// could not load config
-	// &errors.Error{err:&errors.errorString{s:"could not load config"}, fields:map[string]interface {}(nil), causes:[]error{&errors.Error{err:&errors.errorString{s:"connection refused"}, fields:map[string]interface {}{"port":5432}, causes:[]error{}}, &errors.errorString{s:"io: read/write on closed pipe"}}}
+	// &errors.Error{err:&errors.errorString{s:"could not load config"}, fields:map[string]interface {}(nil), causes:[]error{&errors.Error{err:&errors.errorString{s:"connection refused"}, fields:map[string]interface {}{"port":5432}, causes:[]error(nil)}, &errors.errorString{s:"io: read/write on closed pipe"}}}
 }
 
 func ExampleJoin() {
@@ -70,10 +70,10 @@ func ExampleJoin() {
 	// <nil>
 	// EOF
 	// 3 errors occurred:
-	// 	EOF
-	// 	line one
-	// 	line two
-	// 	io: read/write on closed pipe
+	// 	1. EOF
+	// 	2. line one
+	// 		line two
+	// 	3. io: read/write on closed pipe
 }
 
 func ExampleMultiError() {
@@ -88,9 +88,9 @@ func ExampleMultiError() {
 	// Output:
 	// <nil>
 	// 2 errors occurred:
-	// 	EOF
-	// 	2 errors occurred:
-	// 		unexpected EOF
-	// 		io: read/write on closed pipe
+	// 	1. EOF
+	// 	2. 2 errors occurred:
+	// 		1. unexpected EOF
+	// 		2. io: read/write on closed pipe
 	// &errors.MultiError{errs:[]error{&errors.errorString{s:"EOF"}, &errors.MultiError{errs:[]error{&errors.errorString{s:"unexpected EOF"}, &errors.errorString{s:"io: read/write on closed pipe"}}}}}
 }

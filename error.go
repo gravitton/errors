@@ -7,7 +7,6 @@ import (
 	"maps"
 	"runtime"
 	"slices"
-	"strings"
 )
 
 const maxFrames = 32
@@ -141,8 +140,8 @@ func (e *Error) StackTrace() []uintptr {
 	return slices.Clone(e.stack)
 }
 
-// Format prints the message for %s, %v and %q, the message with fields, stack
-// trace and causes for %+v, and Go syntax for %#v.
+// Format prints the message for %s, %v and %q, the underlying error with fields,
+// stack trace and causes for %+v, and Go syntax for %#v.
 func (e *Error) Format(s fmt.State, verb rune) {
 	format(e, s, verb)
 }
@@ -153,25 +152,24 @@ func (e *Error) GoString() string {
 }
 
 func (e *Error) details() string {
-	b := &strings.Builder{}
-	b.WriteString(e.err.Error())
+	var children []string
 
 	fields := e.Fields()
 	for _, key := range slices.Sorted(maps.Keys(fields)) {
-		fmt.Fprintf(b, "\n\t%s=%v", key, fields[key])
+		children = append(children, fmt.Sprintf("%s=%v", key, fields[key]))
 	}
 
 	for frame := range frames(e.stack) {
-		fmt.Fprintf(b, "\n\t%s\n\t\t%s:%d", frame.Function, frame.File, frame.Line)
+		children = append(children, block(frame.Function, fmt.Sprintf("%s:%d", frame.File, frame.Line)))
 	}
 
 	for inner := range mainChain(e) {
 		for _, cause := range inner.causes {
-			fmt.Fprintf(b, "\ncaused by: %s", indent(fmt.Sprintf("%+v", cause)))
+			children = append(children, fmt.Sprintf("caused by: %+v", cause))
 		}
 	}
 
-	return b.String()
+	return block(fmt.Sprintf("%+v", e.err), children...)
 }
 
 func mainChain(err error) iter.Seq[*Error] {

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 	"sync"
 	"testing"
 
@@ -38,7 +37,7 @@ func TestJoinMultiple(t *testing.T) {
 	err := Join(err1, err2)
 
 	assert.Error(t, err)
-	assert.Equal(t, err.Error(), "2 errors occurred:\n\tfoo\n\tbar")
+	assert.Equal(t, err.Error(), "2 errors occurred:\n\t1. foo\n\t2. bar")
 	assert.ErrorIs(t, err, err1)
 	assert.ErrorIs(t, err, err2)
 }
@@ -55,7 +54,7 @@ func TestMultiErrorEmpty(t *testing.T) {
 	errs := NewMulti()
 
 	assert.Equal(t, errs.Error(), "no errors")
-	assert.Equal(t, errs.GoString(), "&errors.MultiError{errs:[]error{}}")
+	assert.Equal(t, errs.GoString(), "&errors.MultiError{errs:[]error(nil)}")
 	assert.Equal(t, errs.Len(), 0)
 	assert.Length(t, errs.Unwrap(), 0)
 	assert.NoError(t, errs.ErrorOrNil())
@@ -83,7 +82,7 @@ func TestMultiErrorAddErrors(t *testing.T) {
 	errs.Add(err1, err2)
 
 	assert.Equal(t, errs.Len(), 2)
-	assert.Equal(t, errs.Error(), "2 errors occurred:\n\tfoo\n\tbar")
+	assert.Equal(t, errs.Error(), "2 errors occurred:\n\t1. foo\n\t2. bar")
 	assert.Equal(t, errs.GoString(), `&errors.MultiError{errs:[]error{&errors.errorString{s:"foo"}, &errors.errorString{s:"bar"}}}`)
 	assert.Length(t, errs.Unwrap(), 2)
 	assert.Equal(t, errs.Unwrap(), []error{err1, err2})
@@ -104,10 +103,16 @@ func TestMultiErrorAddNil(t *testing.T) {
 func TestMultiErrorMultilineMessage(t *testing.T) {
 	errs := Join(errors.New("a\nb"), io.EOF)
 
-	assert.Equal(t, errs.Error(), "2 errors occurred:\n\ta\n\tb\n\tEOF")
+	assert.Equal(t, errs.Error(), "2 errors occurred:\n\t1. a\n\t\tb\n\t2. EOF")
 }
 
-func TestMultiErrorErrorIs(t *testing.T) {
+func TestMultiErrorNested(t *testing.T) {
+	errs := Join(io.EOF, Join(io.ErrUnexpectedEOF, io.ErrClosedPipe))
+
+	assert.Equal(t, errs.Error(), "2 errors occurred:\n\t1. EOF\n\t2. 2 errors occurred:\n\t\t1. unexpected EOF\n\t\t2. io: read/write on closed pipe")
+}
+
+func TestMultiErrorIs(t *testing.T) {
 	errs := NewMulti()
 
 	err1 := errors.New("foo")
@@ -127,7 +132,7 @@ func TestMultiErrorErrorIs(t *testing.T) {
 	assert.ErrorIs(t, errs, err2)
 }
 
-func TestMultiErrorErrorsAreCopied(t *testing.T) {
+func TestMultiErrorUnwrapIsCopy(t *testing.T) {
 	err1 := errors.New("foo")
 	errs := NewMulti()
 	errs.Add(err1)
@@ -143,15 +148,18 @@ func TestMultiErrorFormat(t *testing.T) {
 	err2 := io.EOF
 	errs := Join(err1, err2)
 
-	assert.Equal(t, fmt.Sprintf("%s", errs), "2 errors occurred:\n\tfoo\n\tEOF")
+	assert.Equal(t, fmt.Sprintf("%s", errs), "2 errors occurred:\n\t1. foo\n\t2. EOF")
 	assert.Equal(t, fmt.Sprintf("%q", Join(err2)), `"EOF"`)
 	assert.Equal(t, fmt.Sprintf("[%5s]", Join(err2)), "[  EOF]")
 	assert.Equal(t, fmt.Sprintf("%#v", Join(err2)), `&errors.MultiError{errs:[]error{&errors.errorString{s:"EOF"}}}`)
 
-	details := fmt.Sprintf("%+v", errs)
+}
 
-	assert.True(t, strings.HasPrefix(details, "2 errors occurred:\n\tfoo\n\t\tk=1\n\t\tgithub.com/gravitton/errors.TestMultiErrorFormat\n"))
-	assert.True(t, strings.HasSuffix(details, "\n\tEOF"))
+func TestMultiErrorFormatDetails(t *testing.T) {
+	err1 := New("foo").WithField("k", 1).WithCause(io.EOF)
+	errs := Join(err1, errors.New("a\nb"))
+
+	assert.Equal(t, fmt.Sprintf("%+v", errs), "2 errors occurred:\n\t1. foo\n\t\tk=1"+stackAt(err1, 2)+"\n\t\tcaused by: EOF\n\t2. a\n\t\tb")
 }
 
 func TestMultiErrorFormatSingle(t *testing.T) {
@@ -184,7 +192,7 @@ func TestJoinAsMember(t *testing.T) {
 	assert.Same(t, found, member)
 }
 
-func TestMultiErrorsConcurrentSafe(t *testing.T) {
+func TestMultiErrorConcurrentAdd(t *testing.T) {
 	errs := NewMulti()
 
 	wg := sync.WaitGroup{}
@@ -205,7 +213,7 @@ func TestMultiErrorsConcurrentSafe(t *testing.T) {
 	assert.Equal(t, errs.Len(), iM*jM)
 }
 
-func TestMultiErrorsConcurrentRead(t *testing.T) {
+func TestMultiErrorConcurrentRead(t *testing.T) {
 	errs := NewMulti()
 
 	wg := sync.WaitGroup{}

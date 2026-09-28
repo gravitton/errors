@@ -3,7 +3,6 @@ package errors
 import (
 	"fmt"
 	"slices"
-	"strings"
 	"sync"
 )
 
@@ -38,7 +37,7 @@ func (e *MultiError) Add(errs ...error) {
 	}
 }
 
-// Error returns the single collected message unchanged, or a numbered, indented list.
+// Error returns the single collected message unchanged, or a numbered list.
 func (e *MultiError) Error() string {
 	return e.render(func(err error) string {
 		return err.Error()
@@ -61,7 +60,8 @@ func (e *MultiError) Len() int {
 	return len(e.errs)
 }
 
-// ErrorOrNil returns nil when no errors were collected, otherwise the collection.
+// ErrorOrNil returns nil when no errors were collected, otherwise the collection
+// itself, which reflects errors added later.
 func (e *MultiError) ErrorOrNil() error {
 	if e.Len() == 0 {
 		return nil
@@ -97,10 +97,10 @@ func (e *MultiError) render(text func(error) string) string {
 		return text(errs[0])
 	}
 
-	lines := make([]string, len(errs))
+	members := make([]string, len(errs))
 	for i, err := range errs {
-		lines[i] = "\t" + indent(text(err))
+		members[i] = fmt.Sprintf("%d. %s", i+1, text(err))
 	}
 
-	return fmt.Sprintf("%d errors occurred:\n%s", len(errs), strings.Join(lines, "\n"))
+	return block(fmt.Sprintf("%d errors occurred:", len(errs)), members...)
 }
