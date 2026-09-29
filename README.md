@@ -55,7 +55,7 @@ err = errors.Wrap(err)                          // an *Error with a stack trace 
 ```
 
 Use `Sentinel`, not `New`, for package-level errors: `New` captures the stack where it is called, and at package
-initialisation that stack points nowhere useful. For the same reason, don't derive package-level errors with
+initialization that stack points nowhere useful. For the same reason, don't derive package-level errors with
 `WithField` or `WithCause`.
 
 Adding context at every layer keeps what was added before:

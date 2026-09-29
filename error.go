@@ -13,9 +13,8 @@ const maxFrames = 32
 
 // Error is an immutable error with key-value fields, causes, and a stack trace.
 type Error struct {
-	err    error
+	errs   []error
 	fields map[string]any
-	causes []error
 	stack  []uintptr
 }
 
@@ -28,7 +27,7 @@ func New(text string) *Error {
 // The stack trace is captured where the error is derived or wrapped.
 func Sentinel(text string) *Error {
 	return &Error{
-		err: errors.New(text),
+		errs: []error{errors.New(text)},
 	}
 }
 
@@ -38,7 +37,7 @@ func Newf(format string, args ...any) *Error {
 }
 
 // Wrap converts err into an Error with the best stack trace available: the one of
-// the first Error in the main chain that has one, otherwise the current one.
+// the first Error found through single-error wrappers, otherwise the current one.
 // A nil err returns nil.
 func Wrap(err error) *Error {
 	if err == nil {
@@ -50,7 +49,7 @@ func Wrap(err error) *Error {
 
 func wrap(err error) *Error {
 	derived := Error{
-		err: err,
+		errs: []error{err},
 	}
 
 	if e, ok := err.(*Error); ok {
@@ -68,12 +67,12 @@ func wrap(err error) *Error {
 
 // Error returns the message of the underlying error.
 func (e *Error) Error() string {
-	return e.err.Error()
+	return e.err().Error()
 }
 
 // Unwrap returns the underlying error followed by the causes.
 func (e *Error) Unwrap() []error {
-	return append([]error{e.err}, e.causes...)
+	return slices.Clip(e.errs)
 }
 
 // Is reports whether target is an Error whose underlying error is in the chain of
@@ -81,7 +80,7 @@ func (e *Error) Unwrap() []error {
 func (e *Error) Is(target error) bool {
 	t, ok := target.(*Error)
 
-	return ok && errors.Is(e.err, t.err)
+	return ok && errors.Is(e.err(), t.err())
 }
 
 // Fields returns the fields of every Error in the main chain, merged. The outermost
@@ -103,20 +102,17 @@ func (e *Error) Fields() map[string]any {
 // WithField returns a copy of the error with the field added. A copy of an error
 // without a stack trace gets the current one.
 func (e *Error) WithField(key string, value any) *Error {
-	return wrap(e).withFields(map[string]any{key: value})
+	derived := e.derive()
+	derived.fields = merged(e.fields, map[string]any{key: value})
+
+	return &derived
 }
 
 // WithFields returns a copy of the error with the fields added. A copy of an error
 // without a stack trace gets the current one.
 func (e *Error) WithFields(fields map[string]any) *Error {
-	return wrap(e).withFields(fields)
-}
-
-func (e *Error) withFields(fields map[string]any) *Error {
-	derived := *e
-	derived.fields = make(map[string]any, len(e.fields)+len(fields))
-	maps.Copy(derived.fields, e.fields)
-	maps.Copy(derived.fields, fields)
+	derived := e.derive()
+	derived.fields = merged(e.fields, fields)
 
 	return &derived
 }
@@ -128,8 +124,8 @@ func (e *Error) WithCause(cause error) *Error {
 		return e
 	}
 
-	derived := *wrap(e)
-	derived.causes = append(slices.Clip(e.causes), cause)
+	derived := e.derive()
+	derived.errs = append(slices.Clip(e.errs), cause)
 
 	return &derived
 }
@@ -148,7 +144,22 @@ func (e *Error) Format(s fmt.State, verb rune) {
 
 // GoString returns the error in Go syntax.
 func (e *Error) GoString() string {
-	return fmt.Sprintf("&errors.Error{err:%#v, fields:%#v, causes:%s}", e.err, e.fields, goSyntax(e.causes))
+	return fmt.Sprintf("&errors.Error{err:%#v, fields:%#v, causes:%s}", e.err(), e.fields, goSyntax(e.causes()))
+}
+
+func (e *Error) err() error {
+	return e.errs[0]
+}
+
+func (e *Error) causes() []error {
+	return e.errs[1:]
+}
+
+func (e *Error) derive() Error {
+	derived := *e
+	derived.stack = stackOf(e)
+
+	return derived
 }
 
 func (e *Error) details() string {
@@ -164,12 +175,20 @@ func (e *Error) details() string {
 	}
 
 	for inner := range mainChain(e) {
-		for _, cause := range inner.causes {
+		for _, cause := range inner.causes() {
 			children = append(children, fmt.Sprintf("caused by: %+v", cause))
 		}
 	}
 
-	return block(fmt.Sprintf("%+v", e.err), children...)
+	return block(fmt.Sprintf("%+v", e.err()), children...)
+}
+
+func merged(base, fields map[string]any) map[string]any {
+	merged := make(map[string]any, len(base)+len(fields))
+	maps.Copy(merged, base)
+	maps.Copy(merged, fields)
+
+	return merged
 }
 
 func mainChain(err error) iter.Seq[*Error] {
@@ -181,7 +200,7 @@ func mainChain(err error) iter.Seq[*Error] {
 					return
 				}
 
-				err = e.err
+				err = e.err()
 			case interface{ Unwrap() error }:
 				err = e.Unwrap()
 			default:
@@ -198,10 +217,10 @@ func stackOf(err error) []uintptr {
 		}
 	}
 
-	stack := make([]uintptr, maxFrames)
-	n := runtime.Callers(4, stack)
+	var stack [maxFrames]uintptr
+	n := runtime.Callers(4, stack[:])
 
-	return stack[:n]
+	return slices.Clone(stack[:n])
 }
 
 func frames(stack []uintptr) iter.Seq[runtime.Frame] {

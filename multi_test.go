@@ -89,6 +89,17 @@ func TestMultiErrorAddErrors(t *testing.T) {
 	assert.Error(t, errs.ErrorOrNil())
 }
 
+func TestMultiErrorErrorOrNilIsCollection(t *testing.T) {
+	errs := NewMulti()
+	errs.Add(io.EOF)
+
+	err := errs.ErrorOrNil()
+	errs.Add(io.ErrClosedPipe)
+
+	assert.Same(t, err, error(errs))
+	assert.ErrorIs(t, err, io.ErrClosedPipe)
+}
+
 func TestMultiErrorAddNil(t *testing.T) {
 	errs := NewMulti()
 
@@ -104,6 +115,12 @@ func TestMultiErrorMultilineMessage(t *testing.T) {
 	errs := Join(errors.New("a\nb"), io.EOF)
 
 	assert.Equal(t, errs.Error(), "2 errors occurred:\n\t1. a\n\t\tb\n\t2. EOF")
+}
+
+func TestMultiErrorEmptyLines(t *testing.T) {
+	errs := Join(errors.New("a\n\nb"), errors.New("c\n"))
+
+	assert.Equal(t, errs.Error(), "2 errors occurred:\n\t1. a\n\n\t\tb\n\t2. c\n")
 }
 
 func TestMultiErrorNested(t *testing.T) {
@@ -132,15 +149,18 @@ func TestMultiErrorIs(t *testing.T) {
 	assert.ErrorIs(t, errs, err2)
 }
 
-func TestMultiErrorUnwrapIsCopy(t *testing.T) {
-	err1 := errors.New("foo")
+func TestMultiErrorUnwrapAppend(t *testing.T) {
 	errs := NewMulti()
-	errs.Add(err1)
+	errs.Add(io.EOF)
+	errs.Add(io.ErrUnexpectedEOF)
+	errs.Add(io.ErrShortWrite)
 
 	unwrapped := errs.Unwrap()
-	unwrapped[0] = errors.New("bar")
+	errs.Add(io.ErrClosedPipe)
+	_ = append(unwrapped, io.ErrNoProgress)
 
-	assert.Equal(t, errs.Unwrap(), []error{err1})
+	assert.Length(t, unwrapped, 3)
+	assert.Equal(t, errs.Unwrap(), []error{io.EOF, io.ErrUnexpectedEOF, io.ErrShortWrite, io.ErrClosedPipe})
 }
 
 func TestMultiErrorFormat(t *testing.T) {
@@ -152,7 +172,6 @@ func TestMultiErrorFormat(t *testing.T) {
 	assert.Equal(t, fmt.Sprintf("%q", Join(err2)), `"EOF"`)
 	assert.Equal(t, fmt.Sprintf("[%5s]", Join(err2)), "[  EOF]")
 	assert.Equal(t, fmt.Sprintf("%#v", Join(err2)), `&errors.MultiError{errs:[]error{&errors.errorString{s:"EOF"}}}`)
-
 }
 
 func TestMultiErrorFormatDetails(t *testing.T) {
@@ -197,12 +216,9 @@ func TestMultiErrorConcurrentAdd(t *testing.T) {
 
 	wg := sync.WaitGroup{}
 
-	iM := 10
-	jM := 100
-
-	for i := range iM {
+	for i := range 10 {
 		wg.Go(func() {
-			for j := range jM {
+			for j := range 100 {
 				errs.Add(Newf("err-%d-%d", i, j))
 			}
 		})
@@ -210,7 +226,7 @@ func TestMultiErrorConcurrentAdd(t *testing.T) {
 
 	wg.Wait()
 
-	assert.Equal(t, errs.Len(), iM*jM)
+	assert.Equal(t, errs.Len(), 1000)
 }
 
 func TestMultiErrorConcurrentRead(t *testing.T) {
@@ -230,6 +246,7 @@ func TestMultiErrorConcurrentRead(t *testing.T) {
 				_ = errs.Error()
 				_ = errs.GoString()
 				_ = errs.ErrorOrNil()
+				_ = append(errs.Unwrap(), io.EOF)
 			}
 		})
 	}

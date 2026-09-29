@@ -73,6 +73,13 @@ func TestSentinel(t *testing.T) {
 	assert.Empty(t, errSentinel.StackTrace())
 }
 
+func TestStackTraceIsCopy(t *testing.T) {
+	err := New("test")
+	err.StackTrace()[0] = 0
+
+	assert.Equal(t, raisedIn(err), "TestStackTraceIsCopy")
+}
+
 func TestNewf(t *testing.T) {
 	err := Newf("test %d", 5)
 
@@ -209,6 +216,17 @@ func TestWithCauseDoesNotShareCauses(t *testing.T) {
 	assert.Equal(t, b.Unwrap()[2], io.ErrUnexpectedEOF)
 }
 
+func TestUnwrapAppend(t *testing.T) {
+	err := New("test").WithCause(io.EOF).WithCause(io.ErrUnexpectedEOF)
+
+	a := append(err.Unwrap(), io.ErrClosedPipe)
+	b := append(err.Unwrap(), io.ErrShortWrite)
+
+	assert.Equal(t, a[3], io.ErrClosedPipe)
+	assert.Equal(t, b[3], io.ErrShortWrite)
+	assert.Length(t, err.Unwrap(), 3)
+}
+
 func TestAsFindsCause(t *testing.T) {
 	cause := &fsError{}
 	err := New("test").WithCause(cause)
@@ -304,6 +322,12 @@ func TestFormatDetailsMultiline(t *testing.T) {
 	err := New("line one\nline two").WithField("a", "value one\nvalue two").WithCause(Join(io.EOF, io.ErrClosedPipe))
 
 	assert.Equal(t, fmt.Sprintf("%+v", err), "line one\n\tline two\n\ta=value one\n\t\tvalue two"+stackAt(err, 1)+"\n\tcaused by: 2 errors occurred:\n\t\t1. EOF\n\t\t2. io: read/write on closed pipe")
+}
+
+func TestFormatDetailsEmptyLines(t *testing.T) {
+	err := New("line one\n\nline two").WithField("a", "value\n")
+
+	assert.Equal(t, fmt.Sprintf("%+v", err), "line one\n\n\tline two\n\ta=value\n"+stackAt(err, 1))
 }
 
 func TestFormatDetailsSentinel(t *testing.T) {

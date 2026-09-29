@@ -21,8 +21,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - `Error.Unwrap` returns `[]error` holding the underlying error and the causes, so `errors.Unwrap` returns nil for an `*Error` (**breaking**)
 - `Error.Is` matches when the target's underlying error is in the chain of the underlying error, instead of comparing the message and fields, so fields no longer scope a match and two `New` calls with the same text no longer match (**breaking**)
 - `Error.Format` honors width, precision and flags for `%s`, `%q`, `%v` and `%x`, and `%+v` prints the underlying error with `%+v`, so a wrapped `MultiError` shows its members' details, and the causes with `%+v` after the stack trace
-- Multi-line output follows one layout: every line is indented one tab deeper than the line it belongs to, including causes, multi-line messages and field values
-- `Error.StackTrace` and `MultiError.Unwrap` return copies
+- Multi-line output follows one layout: every line is indented one tab deeper than the line it belongs to, including causes, multi-line messages and field values; empty lines stay empty
+- `Error.StackTrace` returns a copy
+- `Error.Unwrap` and `MultiError.Unwrap` return their internal slice clipped instead of allocating, so `errors.Is` and `errors.As` don't allocate on them
+- A captured stack trace keeps only its frames instead of a 32-frame buffer
 - `MultiError.Error` numbers the messages and reports `no errors` for an empty collection (**breaking**)
 - Methods of `Error` and `MultiError` no longer handle nil receivers (**breaking**)
 

@@ -44,12 +44,13 @@ func (e *MultiError) Error() string {
 	})
 }
 
-// Unwrap returns a copy of the collected errors.
+// Unwrap returns the errors collected so far. Errors added later don't change the
+// returned slice.
 func (e *MultiError) Unwrap() []error {
 	e.mutex.RLock()
 	defer e.mutex.RUnlock()
 
-	return slices.Clone(e.errs)
+	return slices.Clip(e.errs)
 }
 
 // Len returns the number of collected errors.
