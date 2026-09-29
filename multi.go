@@ -3,13 +3,15 @@ package errors
 import (
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 )
 
 // MultiError collects errors into a single error. It is safe for concurrent use.
+// The zero value is an empty collection.
 type MultiError struct {
 	errs  []error
-	mutex sync.RWMutex
+	mutex sync.Mutex
 }
 
 // NewMulti returns an empty MultiError.
@@ -37,9 +39,9 @@ func (e *MultiError) Add(errs ...error) {
 	}
 }
 
-// Error returns the single collected message unchanged, or a numbered list.
+// Error returns the messages of the collected errors joined by newlines.
 func (e *MultiError) Error() string {
-	return e.render(func(err error) string {
+	return e.join(func(err error) string {
 		return err.Error()
 	})
 }
@@ -47,16 +49,16 @@ func (e *MultiError) Error() string {
 // Unwrap returns the errors collected so far. Errors added later don't change the
 // returned slice.
 func (e *MultiError) Unwrap() []error {
-	e.mutex.RLock()
-	defer e.mutex.RUnlock()
+	e.mutex.Lock()
+	defer e.mutex.Unlock()
 
 	return slices.Clip(e.errs)
 }
 
 // Len returns the number of collected errors.
 func (e *MultiError) Len() int {
-	e.mutex.RLock()
-	defer e.mutex.RUnlock()
+	e.mutex.Lock()
+	defer e.mutex.Unlock()
 
 	return len(e.errs)
 }
@@ -83,25 +85,18 @@ func (e *MultiError) GoString() string {
 }
 
 func (e *MultiError) details() string {
-	return e.render(func(err error) string {
+	return e.join(func(err error) string {
 		return fmt.Sprintf("%+v", err)
 	})
 }
 
-func (e *MultiError) render(text func(error) string) string {
+func (e *MultiError) join(text func(error) string) string {
 	errs := e.Unwrap()
 
-	switch len(errs) {
-	case 0:
-		return "no errors"
-	case 1:
-		return text(errs[0])
-	}
-
-	members := make([]string, len(errs))
+	texts := make([]string, len(errs))
 	for i, err := range errs {
-		members[i] = fmt.Sprintf("%d. %s", i+1, text(err))
+		texts[i] = text(err)
 	}
 
-	return block(fmt.Sprintf("%d errors occurred:", len(errs)), members...)
+	return strings.Join(texts, "\n")
 }

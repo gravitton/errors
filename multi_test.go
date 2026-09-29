@@ -10,86 +10,200 @@ import (
 	"github.com/gravitton/assert"
 )
 
-func TestJoinNone(t *testing.T) {
-	err := Join()
+func TestMultiError(t *testing.T) {
+	t.Run("zero value is usable", func(t *testing.T) {
+		var errs MultiError
+		errs.Add(io.EOF)
 
-	assert.NoError(t, err)
+		assert.Equal(t, errs.Len(), 1)
+		assert.Equal(t, errs.Error(), "EOF")
+	})
+	t.Run("concurrent adds are all kept", func(t *testing.T) {
+		errs := NewMulti()
+
+		wg := sync.WaitGroup{}
+
+		for i := range 10 {
+			wg.Go(func() {
+				for j := range 100 {
+					errs.Add(Newf("err-%d-%d", i, j))
+				}
+			})
+		}
+
+		wg.Wait()
+
+		assert.Equal(t, errs.Len(), 1000)
+	})
+	t.Run("concurrent reads while adding", func(t *testing.T) {
+		errs := NewMulti()
+
+		wg := sync.WaitGroup{}
+
+		for i := range 10 {
+			wg.Go(func() {
+				for j := range 100 {
+					errs.Add(Newf("err-%d-%d", i, j))
+				}
+			})
+
+			wg.Go(func() {
+				for range 100 {
+					_ = errs.Error()
+					_ = errs.GoString()
+					_ = errs.ErrorOrNil()
+					_ = append(errs.Unwrap(), io.EOF)
+				}
+			})
+		}
+
+		wg.Wait()
+
+		assert.Equal(t, errs.Len(), 1000)
+	})
 }
 
-func TestJoinAllNil(t *testing.T) {
-	err := Join(nil, nil)
-
-	assert.NoError(t, err)
-}
-
-func TestJoinSingle(t *testing.T) {
-	err1 := errors.New("foo")
-	err := Join(err1)
-
-	assert.Error(t, err)
-	assert.Equal(t, err.Error(), "foo")
-	assert.ErrorIs(t, err, err1)
-}
-
-func TestJoinMultiple(t *testing.T) {
-	err1 := errors.New("foo")
-	err2 := errors.New("bar")
-	err := Join(err1, err2)
-
-	assert.Error(t, err)
-	assert.Equal(t, err.Error(), "2 errors occurred:\n\t1. foo\n\t2. bar")
-	assert.ErrorIs(t, err, err1)
-	assert.ErrorIs(t, err, err2)
-}
-
-func TestJoinSkipsNils(t *testing.T) {
-	err1 := errors.New("foo")
-	err := Join(nil, err1, nil)
-
-	assert.Error(t, err)
-	assert.Equal(t, err.Error(), "foo")
-}
-
-func TestMultiErrorEmpty(t *testing.T) {
+func TestNewMulti(t *testing.T) {
 	errs := NewMulti()
 
-	assert.Equal(t, errs.Error(), "no errors")
-	assert.Equal(t, errs.GoString(), "&errors.MultiError{errs:[]error(nil)}")
+	assert.Equal(t, errs.Error(), "")
 	assert.Equal(t, errs.Len(), 0)
 	assert.Length(t, errs.Unwrap(), 0)
 	assert.NoError(t, errs.ErrorOrNil())
 }
 
-func TestMultiErrorAddError(t *testing.T) {
-	errs := NewMulti()
+func TestJoin(t *testing.T) {
+	t.Run("no errors is nil", func(t *testing.T) {
+		assert.NoError(t, Join())
+	})
+	t.Run("all nil is nil", func(t *testing.T) {
+		assert.NoError(t, Join(nil, nil))
+	})
+	t.Run("single error keeps its message", func(t *testing.T) {
+		err1 := errors.New("foo")
+		err := Join(err1)
 
-	err1 := errors.New("foo")
-	errs.Add(err1)
+		assert.Error(t, err)
+		assert.Equal(t, err.Error(), "foo")
+		assert.ErrorIs(t, err, err1)
+	})
+	t.Run("messages joined by newlines", func(t *testing.T) {
+		err1 := errors.New("foo")
+		err2 := errors.New("bar")
+		err := Join(err1, err2)
 
-	assert.Equal(t, errs.Error(), "foo")
-	assert.Equal(t, errs.GoString(), `&errors.MultiError{errs:[]error{&errors.errorString{s:"foo"}}}`)
-	assert.Length(t, errs.Unwrap(), 1)
-	assert.Equal(t, errs.Unwrap(), []error{err1})
-	assert.Error(t, errs.ErrorOrNil())
+		assert.Error(t, err)
+		assert.Equal(t, err.Error(), "foo\nbar")
+		assert.ErrorIs(t, err, err1)
+		assert.ErrorIs(t, err, err2)
+	})
+	t.Run("skips nils", func(t *testing.T) {
+		err1 := errors.New("foo")
+		err := Join(nil, err1, nil)
+
+		assert.Error(t, err)
+		assert.Equal(t, err.Error(), "foo")
+	})
+	t.Run("collection found by As", func(t *testing.T) {
+		err := Join(errors.New("foo"), errors.New("bar"))
+
+		errs, ok := AsType[*MultiError](err)
+
+		assert.True(t, ok)
+		assert.Equal(t, errs.Len(), 2)
+	})
+	t.Run("member found by As", func(t *testing.T) {
+		member := &fsError{}
+		err := Join(errors.New("foo"), member)
+
+		found, ok := AsType[*fsError](err)
+
+		assert.True(t, ok)
+		assert.Same(t, found, member)
+	})
 }
 
-func TestMultiErrorAddErrors(t *testing.T) {
-	errs := NewMulti()
+func TestMultiError_Add(t *testing.T) {
+	t.Run("one error", func(t *testing.T) {
+		errs := NewMulti()
 
-	err1 := errors.New("foo")
-	err2 := errors.New("bar")
+		err1 := errors.New("foo")
+		errs.Add(err1)
 
-	errs.Add(err1, err2)
+		assert.Equal(t, errs.Unwrap(), []error{err1})
+		assert.Error(t, errs.ErrorOrNil())
+	})
+	t.Run("several errors in order", func(t *testing.T) {
+		errs := NewMulti()
 
-	assert.Equal(t, errs.Len(), 2)
-	assert.Equal(t, errs.Error(), "2 errors occurred:\n\t1. foo\n\t2. bar")
-	assert.Equal(t, errs.GoString(), `&errors.MultiError{errs:[]error{&errors.errorString{s:"foo"}, &errors.errorString{s:"bar"}}}`)
-	assert.Length(t, errs.Unwrap(), 2)
-	assert.Equal(t, errs.Unwrap(), []error{err1, err2})
-	assert.Error(t, errs.ErrorOrNil())
+		err1 := errors.New("foo")
+		err2 := errors.New("bar")
+
+		errs.Add(err1, err2)
+
+		assert.Equal(t, errs.Len(), 2)
+		assert.Equal(t, errs.Unwrap(), []error{err1, err2})
+		assert.Error(t, errs.ErrorOrNil())
+	})
+	t.Run("skips nils", func(t *testing.T) {
+		errs := NewMulti()
+
+		errs.Add()
+		errs.Add(nil)
+		errs.Add(nil, nil)
+
+		assert.Length(t, errs.Unwrap(), 0)
+		assert.NoError(t, errs.ErrorOrNil())
+	})
 }
 
-func TestMultiErrorErrorOrNilIsCollection(t *testing.T) {
+func TestMultiError_Error(t *testing.T) {
+	t.Run("messages joined by newlines", func(t *testing.T) {
+		assert.Equal(t, Join(errors.New("foo"), errors.New("bar")).Error(), "foo\nbar")
+	})
+	t.Run("nested collections are flat text", func(t *testing.T) {
+		errs := Join(io.EOF, Join(io.ErrUnexpectedEOF, io.ErrClosedPipe))
+
+		assert.Equal(t, errs.Error(), "EOF\nunexpected EOF\nio: read/write on closed pipe")
+	})
+}
+
+func TestMultiError_Unwrap(t *testing.T) {
+	t.Run("members visible to Is", func(t *testing.T) {
+		errs := NewMulti()
+
+		err1 := errors.New("foo")
+		err2 := errors.New("bar")
+
+		assert.NotErrorIs(t, errs, err1)
+		assert.NotErrorIs(t, errs, err2)
+
+		errs.Add(err1)
+
+		assert.ErrorIs(t, errs, err1)
+		assert.NotErrorIs(t, errs, err2)
+
+		errs.Add(err2)
+
+		assert.ErrorIs(t, errs, err1)
+		assert.ErrorIs(t, errs, err2)
+	})
+	t.Run("appending does not change the collection", func(t *testing.T) {
+		errs := NewMulti()
+		errs.Add(io.EOF)
+		errs.Add(io.ErrUnexpectedEOF)
+		errs.Add(io.ErrShortWrite)
+
+		unwrapped := errs.Unwrap()
+		errs.Add(io.ErrClosedPipe)
+		_ = append(unwrapped, io.ErrNoProgress)
+
+		assert.Length(t, unwrapped, 3)
+		assert.Equal(t, errs.Unwrap(), []error{io.EOF, io.ErrUnexpectedEOF, io.ErrShortWrite, io.ErrClosedPipe})
+	})
+}
+
+func TestMultiError_ErrorOrNil(t *testing.T) {
 	errs := NewMulti()
 	errs.Add(io.EOF)
 
@@ -100,158 +214,31 @@ func TestMultiErrorErrorOrNilIsCollection(t *testing.T) {
 	assert.ErrorIs(t, err, io.ErrClosedPipe)
 }
 
-func TestMultiErrorAddNil(t *testing.T) {
-	errs := NewMulti()
+func TestMultiError_Format(t *testing.T) {
+	t.Run("message verbs", func(t *testing.T) {
+		errs := Join(New("foo").WithField("k", 1), io.EOF)
 
-	errs.Add()
-	errs.Add(nil)
-	errs.Add(nil, nil)
+		assert.Equal(t, fmt.Sprintf("%s", errs), "foo\nEOF")
+		assert.Equal(t, fmt.Sprintf("%q", Join(io.EOF)), `"EOF"`)
+		assert.Equal(t, fmt.Sprintf("[%5s]", Join(io.EOF)), "[  EOF]")
+	})
+	t.Run("details of members joined by newlines", func(t *testing.T) {
+		err1 := New("foo").WithField("k", 1).WithCause(io.EOF)
+		errs := Join(err1, errors.New("a\nb"))
 
-	assert.Length(t, errs.Unwrap(), 0)
-	assert.NoError(t, errs.ErrorOrNil())
+		assert.Equal(t, fmt.Sprintf("%+v", errs), "foo\n\tk=1"+stackAt(err1, 1)+"\n\tcaused by: EOF\na\nb")
+	})
+	t.Run("empty collection prints nothing", func(t *testing.T) {
+		assert.Equal(t, fmt.Sprintf("%+v", NewMulti()), "")
+		assert.Equal(t, fmt.Sprintf("%v", NewMulti()), "")
+	})
 }
 
-func TestMultiErrorMultilineMessage(t *testing.T) {
-	errs := Join(errors.New("a\nb"), io.EOF)
-
-	assert.Equal(t, errs.Error(), "2 errors occurred:\n\t1. a\n\t\tb\n\t2. EOF")
-}
-
-func TestMultiErrorEmptyLines(t *testing.T) {
-	errs := Join(errors.New("a\n\nb"), errors.New("c\n"))
-
-	assert.Equal(t, errs.Error(), "2 errors occurred:\n\t1. a\n\n\t\tb\n\t2. c\n")
-}
-
-func TestMultiErrorNested(t *testing.T) {
-	errs := Join(io.EOF, Join(io.ErrUnexpectedEOF, io.ErrClosedPipe))
-
-	assert.Equal(t, errs.Error(), "2 errors occurred:\n\t1. EOF\n\t2. 2 errors occurred:\n\t\t1. unexpected EOF\n\t\t2. io: read/write on closed pipe")
-}
-
-func TestMultiErrorIs(t *testing.T) {
-	errs := NewMulti()
-
-	err1 := errors.New("foo")
-	err2 := errors.New("bar")
-
-	assert.NotErrorIs(t, errs, err1)
-	assert.NotErrorIs(t, errs, err2)
-
-	errs.Add(err1)
-
-	assert.ErrorIs(t, errs, err1)
-	assert.NotErrorIs(t, errs, err2)
-
-	errs.Add(err2)
-
-	assert.ErrorIs(t, errs, err1)
-	assert.ErrorIs(t, errs, err2)
-}
-
-func TestMultiErrorUnwrapAppend(t *testing.T) {
-	errs := NewMulti()
-	errs.Add(io.EOF)
-	errs.Add(io.ErrUnexpectedEOF)
-	errs.Add(io.ErrShortWrite)
-
-	unwrapped := errs.Unwrap()
-	errs.Add(io.ErrClosedPipe)
-	_ = append(unwrapped, io.ErrNoProgress)
-
-	assert.Length(t, unwrapped, 3)
-	assert.Equal(t, errs.Unwrap(), []error{io.EOF, io.ErrUnexpectedEOF, io.ErrShortWrite, io.ErrClosedPipe})
-}
-
-func TestMultiErrorFormat(t *testing.T) {
-	err1 := New("foo").WithField("k", 1)
-	err2 := io.EOF
-	errs := Join(err1, err2)
-
-	assert.Equal(t, fmt.Sprintf("%s", errs), "2 errors occurred:\n\t1. foo\n\t2. EOF")
-	assert.Equal(t, fmt.Sprintf("%q", Join(err2)), `"EOF"`)
-	assert.Equal(t, fmt.Sprintf("[%5s]", Join(err2)), "[  EOF]")
-	assert.Equal(t, fmt.Sprintf("%#v", Join(err2)), `&errors.MultiError{errs:[]error{&errors.errorString{s:"EOF"}}}`)
-}
-
-func TestMultiErrorFormatDetails(t *testing.T) {
-	err1 := New("foo").WithField("k", 1).WithCause(io.EOF)
-	errs := Join(err1, errors.New("a\nb"))
-
-	assert.Equal(t, fmt.Sprintf("%+v", errs), "2 errors occurred:\n\t1. foo\n\t\tk=1"+stackAt(err1, 2)+"\n\t\tcaused by: EOF\n\t2. a\n\t\tb")
-}
-
-func TestMultiErrorFormatSingle(t *testing.T) {
-	err := New("foo").WithField("k", 1)
-
-	assert.Equal(t, fmt.Sprintf("%+v", Join(err)), fmt.Sprintf("%+v", err))
-}
-
-func TestMultiErrorFormatEmpty(t *testing.T) {
-	assert.Equal(t, fmt.Sprintf("%+v", NewMulti()), "no errors")
-	assert.Equal(t, fmt.Sprintf("%v", NewMulti()), "no errors")
-}
-
-func TestJoinAs(t *testing.T) {
-	err := Join(errors.New("foo"), errors.New("bar"))
-
-	errs, ok := AsType[*MultiError](err)
-
-	assert.True(t, ok)
-	assert.Equal(t, errs.Len(), 2)
-}
-
-func TestJoinAsMember(t *testing.T) {
-	member := &fsError{}
-	err := Join(errors.New("foo"), member)
-
-	found, ok := AsType[*fsError](err)
-
-	assert.True(t, ok)
-	assert.Same(t, found, member)
-}
-
-func TestMultiErrorConcurrentAdd(t *testing.T) {
-	errs := NewMulti()
-
-	wg := sync.WaitGroup{}
-
-	for i := range 10 {
-		wg.Go(func() {
-			for j := range 100 {
-				errs.Add(Newf("err-%d-%d", i, j))
-			}
-		})
-	}
-
-	wg.Wait()
-
-	assert.Equal(t, errs.Len(), 1000)
-}
-
-func TestMultiErrorConcurrentRead(t *testing.T) {
-	errs := NewMulti()
-
-	wg := sync.WaitGroup{}
-
-	for i := range 10 {
-		wg.Go(func() {
-			for j := range 100 {
-				errs.Add(Newf("err-%d-%d", i, j))
-			}
-		})
-
-		wg.Go(func() {
-			for range 100 {
-				_ = errs.Error()
-				_ = errs.GoString()
-				_ = errs.ErrorOrNil()
-				_ = append(errs.Unwrap(), io.EOF)
-			}
-		})
-	}
-
-	wg.Wait()
-
-	assert.Equal(t, errs.Len(), 1000)
+func TestMultiError_GoString(t *testing.T) {
+	t.Run("empty", func(t *testing.T) {
+		assert.Equal(t, fmt.Sprintf("%#v", NewMulti()), "&errors.MultiError{errs:[]error(nil)}")
+	})
+	t.Run("members in go syntax", func(t *testing.T) {
+		assert.Equal(t, fmt.Sprintf("%#v", Join(errors.New("foo"), io.EOF)), `&errors.MultiError{errs:[]error{&errors.errorString{s:"foo"}, &errors.errorString{s:"EOF"}}}`)
+	})
 }
