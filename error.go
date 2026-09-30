@@ -46,14 +46,14 @@ func Wrap(err error) *Error {
 		return nil
 	}
 
-	return wrap(err)
-}
-
-func wrap(err error) *Error {
 	if e, ok := err.(*Error); ok {
 		return e
 	}
 
+	return wrap(err)
+}
+
+func wrap(err error) *Error {
 	return &Error{
 		err:   err,
 		stack: stackOf(err),
@@ -117,15 +117,19 @@ func (e *Error) WithFields(fields map[string]any) *Error {
 }
 
 // WithCause returns a copy of the error with the cause attached, joined with the causes
-// it already has into one flat collection. It panics on a nil error.
+// it already has into one flat collection. A nil or empty cause attaches nothing.
+// It panics on a nil error.
 func (e *Error) WithCause(cause error) *Error {
 	causes := slices.Concat(members(e.cause), members(cause))
 
 	derived := *e
-	derived.cause = Join(causes...)
 
-	if len(causes) == 1 {
+	switch len(causes) {
+	case 0:
+	case 1:
 		derived.cause = causes[0]
+	default:
+		derived.cause = Join(causes...)
 	}
 
 	return &derived
@@ -251,18 +255,28 @@ func stackOf(err error) []uintptr {
 }
 
 func members(err error) []error {
-	switch err := err.(type) {
-	case nil:
+	if !exists(err) {
 		return nil
-	case *MultiError:
-		return err.Unwrap()
-	case *Error:
-		if err == nil {
-			return nil
-		}
+	}
+
+	if errs, ok := err.(*MultiError); ok {
+		return errs.Unwrap()
 	}
 
 	return []error{err}
+}
+
+func exists(err error) bool {
+	switch err := err.(type) {
+	case nil:
+		return false
+	case *Error:
+		return err != nil
+	case *MultiError:
+		return err != nil
+	}
+
+	return true
 }
 
 func indent(text string) string {

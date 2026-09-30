@@ -95,7 +95,6 @@ func TestError(t *testing.T) {
 		assert.Equal(t, err.WithField("a", 1).Fields(), map[string]any{"a": 1})
 		assert.Empty(t, err.WithField("a", 1).StackTrace())
 		assert.Equal(t, fmt.Sprintf("%#v", err.WithField("a", 1)), `&errors.Error{fields:map[string]interface {}{"a":1}}`)
-		assert.Same(t, Wrap(&err), &err)
 	})
 	t.Run("nil receiver is readable", func(t *testing.T) {
 		var err *Error
@@ -226,8 +225,11 @@ func TestWrap(t *testing.T) {
 		assert.Equal(t, raisedIn(Wrap(fmt.Errorf("outer: %w", err))), here())
 		assert.Equal(t, raisedIn(Newf("outer: %w", err)), here())
 	})
-	t.Run("a struct literal in the chain keeps no stack", func(t *testing.T) {
-		assert.Empty(t, Wrap(fmt.Errorf("outer: %w", &Error{})).StackTrace())
+	t.Run("a struct literal keeps no stack", func(t *testing.T) {
+		literal := &Error{}
+
+		assert.Same(t, Wrap(literal), literal)
+		assert.Empty(t, Wrap(fmt.Errorf("outer: %w", literal)).StackTrace())
 	})
 }
 
@@ -238,10 +240,10 @@ func TestError_Error(t *testing.T) {
 }
 
 func TestError_Unwrap(t *testing.T) {
-	t.Run("underlying error", func(t *testing.T) {
+	t.Run("returns the underlying error", func(t *testing.T) {
 		assert.Equal(t, Wrap(io.EOF).Unwrap(), []error{io.EOF})
 	})
-	t.Run("underlying error then cause", func(t *testing.T) {
+	t.Run("returns the underlying error, then the cause", func(t *testing.T) {
 		assert.Equal(t, Wrap(io.EOF).WithCause(io.ErrClosedPipe).Unwrap(), []error{io.EOF, io.ErrClosedPipe})
 	})
 }
@@ -327,12 +329,14 @@ func TestError_WithCause(t *testing.T) {
 		assert.Equal(t, err.StackTrace(), original.StackTrace())
 		assert.Length(t, original.Unwrap(), 1)
 	})
-	t.Run("nil, a nil error or an empty collection attaches nothing", func(t *testing.T) {
+	t.Run("nil, a nil error or a nil or empty collection attaches nothing", func(t *testing.T) {
 		err := New("test")
 		var missing *Error
+		var none *MultiError
 
 		assert.Equal(t, err.WithCause(nil).Unwrap(), err.Unwrap())
 		assert.Equal(t, err.WithCause(missing).Unwrap(), err.Unwrap())
+		assert.Equal(t, err.WithCause(none).Unwrap(), err.Unwrap())
 		assert.Equal(t, err.WithCause(NewMulti()).Unwrap(), err.Unwrap())
 		assert.Same(t, err.WithCause(io.EOF).WithCause(NewMulti()).Unwrap()[1], io.EOF)
 	})
@@ -407,20 +411,21 @@ func TestError_Frames(t *testing.T) {
 }
 
 func TestError_Format(t *testing.T) {
-	t.Run("message verbs", func(t *testing.T) {
+	t.Run("message only, honoring width, precision and flags", func(t *testing.T) {
 		err := New("test").WithField("a", 1)
 
 		assert.Equal(t, fmt.Sprintf("%s", err), "test")
 		assert.Equal(t, fmt.Sprintf("%v", err), "test")
 		assert.Equal(t, fmt.Sprintf("%q", err), `"test"`)
 		assert.Equal(t, fmt.Sprintf("[%6s]", err), "[  test]")
+		assert.Equal(t, fmt.Sprintf("[%-6.2s]", err), "[te    ]")
 	})
-	t.Run("details with fields, stack and cause", func(t *testing.T) {
+	t.Run("prints the fields sorted by key, the stack and the cause", func(t *testing.T) {
 		err := New("test").WithField("b", 2).WithField("a", 1).WithCause(io.EOF)
 
 		assert.Equal(t, fmt.Sprintf("%+v", err), "test\n\ta=1\n\tb=2"+stackAt(err, 1)+"\n\tcaused by: EOF")
 	})
-	t.Run("details of nested causes", func(t *testing.T) {
+	t.Run("indents the details of a nested cause one tab further", func(t *testing.T) {
 		cause := func() *Error {
 			return New("a").WithCause(io.EOF)
 		}()
@@ -428,26 +433,26 @@ func TestError_Format(t *testing.T) {
 
 		assert.Equal(t, fmt.Sprintf("%+v", err), "root"+stackAt(err, 1)+"\n\tcaused by: a"+stackAt(cause, 2)+"\n\t\tcaused by: EOF")
 	})
-	t.Run("details of every joined cause", func(t *testing.T) {
+	t.Run("prints every member of a joined cause as its own cause", func(t *testing.T) {
 		joined := New("root").WithCause(io.EOF).WithCause(io.ErrClosedPipe)
 		collection := New("root").WithCause(Join(io.EOF, io.ErrClosedPipe))
 
 		assert.Equal(t, fmt.Sprintf("%+v", joined), "root"+stackAt(joined, 1)+"\n\tcaused by: EOF\n\tcaused by: io: read/write on closed pipe")
 		assert.Equal(t, fmt.Sprintf("%+v", collection), "root"+stackAt(collection, 1)+"\n\tcaused by: EOF\n\tcaused by: io: read/write on closed pipe")
 	})
-	t.Run("details of an error wrapped with %w leave out its fields and cause", func(t *testing.T) {
+	t.Run("leaves out the fields and cause of an error wrapped with %w", func(t *testing.T) {
 		inner := func() *Error {
 			return New("inner").WithField("a", 1).WithCause(io.EOF)
 		}()
 
 		assert.Equal(t, fmt.Sprintf("%+v", Newf("outer: %w", inner)), "outer: inner"+stackAt(inner, 1))
 	})
-	t.Run("details of the underlying error", func(t *testing.T) {
+	t.Run("prints the underlying error with %+v", func(t *testing.T) {
 		err := Wrap(&detailedError{})
 
 		assert.Equal(t, fmt.Sprintf("%+v", err), "detailed with details"+stackAt(err, 1))
 	})
-	t.Run("details of an underlying collection", func(t *testing.T) {
+	t.Run("prints the fields and stack after the last member of an underlying collection", func(t *testing.T) {
 		member := func() *Error {
 			return New("a").WithField("x", 1)
 		}()
@@ -463,7 +468,7 @@ func TestError_Format(t *testing.T) {
 }
 
 func TestError_GoString(t *testing.T) {
-	t.Run("fields and cause", func(t *testing.T) {
+	t.Run("keyed literal of the fields that are set", func(t *testing.T) {
 		assert.Equal(t, fmt.Sprintf("%#v", New("test")), `&errors.Error{err:&errors.errorString{s:"test"}}`)
 		assert.Equal(t, fmt.Sprintf("%#v", New("test").WithField("a", 1)), `&errors.Error{err:&errors.errorString{s:"test"}, fields:map[string]interface {}{"a":1}}`)
 		assert.Equal(t, fmt.Sprintf("%#v", Wrap(errSentinel).WithCause(io.EOF)), `&errors.Error{err:&errors.errorString{s:"sentinel"}, cause:&errors.errorString{s:"EOF"}}`)
@@ -474,19 +479,19 @@ func TestError_GoString(t *testing.T) {
 }
 
 func TestError_LogValue(t *testing.T) {
-	t.Run("message and fields", func(t *testing.T) {
+	t.Run("logs the message and the fields sorted by key", func(t *testing.T) {
 		assert.Equal(t, logged(New("test").WithField("b", 2).WithField("a", 1)), "err.msg=test err.fields.a=1 err.fields.b=2")
 	})
 	t.Run("fields do not collide with the message and cause", func(t *testing.T) {
 		assert.Equal(t, logged(New("test").WithField("msg", "a").WithField("cause", "b").WithCause(io.EOF)), "err.msg=test err.fields.cause=b err.fields.msg=a err.cause=EOF")
 	})
-	t.Run("plain cause", func(t *testing.T) {
+	t.Run("logs a plain cause by its message", func(t *testing.T) {
 		assert.Equal(t, logged(New("test").WithCause(io.EOF)), "err.msg=test err.cause=EOF")
 	})
-	t.Run("cause as a nested group", func(t *testing.T) {
+	t.Run("logs an error cause as a nested group", func(t *testing.T) {
 		assert.Equal(t, logged(New("test").WithCause(New("inner").WithField("a", 1))), "err.msg=test err.cause.msg=inner err.cause.fields.a=1")
 	})
-	t.Run("joined causes keyed by index", func(t *testing.T) {
+	t.Run("logs joined causes keyed by index", func(t *testing.T) {
 		err := New("test").WithCause(io.EOF).WithCause(New("inner").WithField("a", 1))
 
 		assert.Equal(t, logged(err), "err.msg=test err.cause.0=EOF err.cause.1.msg=inner err.cause.1.fields.a=1")

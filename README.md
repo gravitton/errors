@@ -61,6 +61,7 @@ points nowhere useful. Wrap the sentinel where it is returned, which captures th
 
 Check the error before wrapping it, never after: `Wrap(nil)` returns a nil `*Error`, which is not `nil` once stored in
 an `error`. Reading a nil `*Error` or `*MultiError` is safe and prints `<nil>`, but `With*` and `Add` panic on one.
+`Add`, `Join` and `WithCause` skip one, so it never ends up in a collection or as a cause.
 
 ```go
 if err := load(); err != nil {
@@ -145,7 +146,7 @@ collection without extra locking.
 
 ```go
 errs := errors.NewMulti()
-errs.Add(process(1), process(2)) // nils are skipped
+errs.Add(process(1), process(2)) // nils, nil *Errors and nil *MultiErrors are skipped
 
 return errs.ErrorOrNil()         // nil when nothing was added
 ```
@@ -192,6 +193,8 @@ fmt.Printf("%+v", err)
 `%+v` applies to the underlying error and to every cause, so their details are printed too. An `*Error` wrapped with
 `%w` is the exception: `fmt` prints only the wrapper's message, so its fields and cause are left out, reachable with
 `errors.As`. A `MultiError` joins its members with newlines, as `errors.Join` does, with `%+v` applied to every member.
+Wrapping a `MultiError` in an `*Error` prints its members first, so the fields and stack trace of the `*Error` follow
+the last member at the same indentation.
 
 ### Logging
 

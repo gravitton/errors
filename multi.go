@@ -22,7 +22,7 @@ func NewMulti() *MultiError {
 	return &MultiError{}
 }
 
-// Join returns a MultiError with the given errors, or nil when all of them are nil.
+// Join returns a MultiError with the given errors, or nil when Add skips all of them.
 func Join(errs ...error) error {
 	m := NewMulti()
 	m.Add(errs...)
@@ -30,13 +30,14 @@ func Join(errs ...error) error {
 	return m.ErrorOrNil()
 }
 
-// Add adds the errors to the collection, skipping nils. It panics on a nil collection.
+// Add adds the errors to the collection, skipping nils, nil Errors and nil MultiErrors.
+// It panics on a nil collection.
 func (e *MultiError) Add(errs ...error) {
 	e.mutex.Lock()
 	defer e.mutex.Unlock()
 
 	for _, err := range errs {
-		if err != nil {
+		if exists(err) {
 			e.errs = append(e.errs, err)
 		}
 	}

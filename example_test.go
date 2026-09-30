@@ -79,6 +79,9 @@ func ExampleError_Format() {
 	err := errors.New("could not load config").WithField("path", "config.yml").WithCause(io.EOF)
 
 	fmt.Printf("%+v\n", err)
+	// The stack trace holds file paths that depend on where the module is built, so this
+	// example has no checked output. It prints something like:
+	//
 	// could not load config
 	// 	path=config.yml
 	// 	github.com/gravitton/errors_test.ExampleError_Format
@@ -143,10 +146,13 @@ func ExampleMultiError_Format() {
 	errs := errors.Join(errors.New("connection refused").WithField("port", 5432), io.EOF)
 
 	fmt.Printf("%+v\n", errs)
+	// The stack trace holds file paths that depend on where the module is built, so this
+	// example has no checked output. It prints something like:
+	//
 	// connection refused
 	// 	port=5432
 	// 	github.com/gravitton/errors_test.ExampleMultiError_Format
-	// 		/app/example_test.go:143
+	// 		/app/example_test.go:146
 	// 	...
 	// EOF
 }

@@ -21,13 +21,14 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - `Error.Is` matches a target `*Error` by its underlying error instead of by message and fields, so copies made by `With*` match the error they came from (**breaking**)
 - `Error.WithCause` joins a new cause with the attached ones into one flat `MultiError` instead of replacing them (**breaking**)
 - `Error.WithCause` attaches a copy of the members of a `MultiError` cause, so adding to it later doesn't change the error
-- `Error.WithCause` attaches nothing for `nil`, a nil `*Error` or an empty `MultiError`
+- `Error.WithCause` attaches nothing for `nil`, a nil `*Error` or a nil or empty `MultiError`
 - `Error.WithField`, `WithFields` and `WithCause` panic on a nil receiver instead of returning nil (**breaking**)
 - `Error.Format` prints for `%+v` the underlying error, the fields, the stack trace and then every cause, all with `%+v` and indented one tab
 - `Error.Format` honors width, precision and flags for `%s`, `%v` and `%q`
 - `Error.StackTrace` returns a copy
 - `Wrap` and `Newf` reuse the stack trace of the first `*Error` in the `Unwrap() error` chain instead of capturing a new one
 - `MultiError.Error` joins the messages by newlines like `errors.Join`, without the `N errors occurred:` header, and returns `<nil>` for a nil receiver (**breaking**)
+- `MultiError.Add` and `Join` skip a nil `*Error` and a nil `*MultiError` as they skip `nil`, so `Join(errors.Wrap(nil))` is nil (**breaking**)
 - `MultiError.Unwrap` returns a copy
 - `MultiError.GoString` prints a keyed Go literal like `Error.GoString`
 

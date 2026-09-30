@@ -96,7 +96,11 @@ func TestJoin(t *testing.T) {
 		assert.NoError(t, Join())
 	})
 	t.Run("all nil is nil", func(t *testing.T) {
+		var missing *Error
+		var none *MultiError
+
 		assert.NoError(t, Join(nil, nil))
+		assert.NoError(t, Join(missing, none))
 	})
 	t.Run("single error keeps its message", func(t *testing.T) {
 		err1 := errors.New("foo")
@@ -143,7 +147,7 @@ func TestJoin(t *testing.T) {
 }
 
 func TestMultiError_Add(t *testing.T) {
-	t.Run("one error", func(t *testing.T) {
+	t.Run("adds an error", func(t *testing.T) {
 		errs := NewMulti()
 
 		err1 := errors.New("foo")
@@ -152,7 +156,7 @@ func TestMultiError_Add(t *testing.T) {
 		assert.Equal(t, errs.Unwrap(), []error{err1})
 		assert.Error(t, errs.ErrorOrNil())
 	})
-	t.Run("several errors in order", func(t *testing.T) {
+	t.Run("adds several errors in order", func(t *testing.T) {
 		errs := NewMulti()
 
 		err1 := errors.New("foo")
@@ -173,6 +177,26 @@ func TestMultiError_Add(t *testing.T) {
 
 		assert.Length(t, errs.Unwrap(), 0)
 		assert.NoError(t, errs.ErrorOrNil())
+	})
+	t.Run("skips a nil error and a nil collection", func(t *testing.T) {
+		errs := NewMulti()
+		var missing *Error
+		var none *MultiError
+
+		errs.Add(missing, none, Wrap(nil))
+
+		assert.Length(t, errs.Unwrap(), 0)
+		assert.NoError(t, errs.ErrorOrNil())
+	})
+	t.Run("keeps an empty collection that may be added to later", func(t *testing.T) {
+		errs := NewMulti()
+		member := NewMulti()
+
+		errs.Add(member)
+		member.Add(io.EOF)
+
+		assert.Equal(t, errs.Len(), 1)
+		assert.ErrorIs(t, errs, io.EOF)
 	})
 }
 
@@ -239,14 +263,15 @@ func TestMultiError_ErrorOrNil(t *testing.T) {
 }
 
 func TestMultiError_Format(t *testing.T) {
-	t.Run("message verbs", func(t *testing.T) {
+	t.Run("message only, honoring width, precision and flags", func(t *testing.T) {
 		errs := Join(New("foo").WithField("k", 1), io.EOF)
 
 		assert.Equal(t, fmt.Sprintf("%s", errs), "foo\nEOF")
 		assert.Equal(t, fmt.Sprintf("%q", Join(io.EOF)), `"EOF"`)
 		assert.Equal(t, fmt.Sprintf("[%5s]", Join(io.EOF)), "[  EOF]")
+		assert.Equal(t, fmt.Sprintf("[%-5.2s]", Join(io.EOF)), "[EO   ]")
 	})
-	t.Run("details of members joined by newlines", func(t *testing.T) {
+	t.Run("joins the members printed with %+v by newlines", func(t *testing.T) {
 		err1 := func() *Error {
 			return New("foo").WithField("k", 1).WithCause(io.EOF)
 		}()
@@ -261,16 +286,16 @@ func TestMultiError_Format(t *testing.T) {
 }
 
 func TestMultiError_GoString(t *testing.T) {
-	t.Run("empty", func(t *testing.T) {
+	t.Run("empty collection has no members", func(t *testing.T) {
 		assert.Equal(t, fmt.Sprintf("%#v", NewMulti()), "&errors.MultiError{}")
 	})
-	t.Run("members in go syntax", func(t *testing.T) {
+	t.Run("members formatted with %#v", func(t *testing.T) {
 		assert.Equal(t, fmt.Sprintf("%#v", Join(errors.New("foo"), io.EOF)), `&errors.MultiError{errs:[]error{&errors.errorString{s:"foo"}, &errors.errorString{s:"EOF"}}}`)
 	})
 }
 
 func TestMultiError_LogValue(t *testing.T) {
-	t.Run("members keyed by index", func(t *testing.T) {
+	t.Run("logs members keyed by index", func(t *testing.T) {
 		errs := Join(New("a").WithField("x", 1), io.EOF)
 
 		assert.Equal(t, logged(errs), "err.0.msg=a err.0.fields.x=1 err.1=EOF")
