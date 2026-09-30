@@ -68,8 +68,8 @@ func wrap(err error) *Error {
 
 // Error returns the message of the underlying error.
 func (e *Error) Error() string {
-	if e.err == nil {
-		return ""
+	if e == nil || e.err == nil {
+		return "<nil>"
 	}
 
 	return e.err.Error()
@@ -77,10 +77,9 @@ func (e *Error) Error() string {
 
 // Unwrap returns the underlying error, then the cause if there is one.
 func (e *Error) Unwrap() []error {
-	if e.err == nil {
+	if e == nil || e.err == nil {
 		return nil
 	}
-
 	if e.cause == nil {
 		return []error{e.err}
 	}
@@ -90,15 +89,19 @@ func (e *Error) Unwrap() []error {
 
 // Fields returns a copy of the fields.
 func (e *Error) Fields() map[string]any {
+	if e == nil {
+		return nil
+	}
+
 	return maps.Clone(e.fields)
 }
 
-// WithField returns a copy of the error with the field added.
+// WithField returns a copy of the error with the field added. It panics on a nil error.
 func (e *Error) WithField(key string, value any) *Error {
 	return e.WithFields(map[string]any{key: value})
 }
 
-// WithFields returns a copy of the error with the fields added.
+// WithFields returns a copy of the error with the fields added. It panics on a nil error.
 func (e *Error) WithFields(fields map[string]any) *Error {
 	derived := *e
 	derived.fields = make(map[string]any, len(e.fields)+len(fields))
@@ -109,7 +112,8 @@ func (e *Error) WithFields(fields map[string]any) *Error {
 }
 
 // WithCause returns a copy of the error with the cause attached, joined with the cause
-// it already has. A nil cause returns the error unchanged.
+// it already has. A nil cause returns the error unchanged; otherwise it panics on a nil
+// error.
 func (e *Error) WithCause(cause error) *Error {
 	if cause == nil {
 		return e
@@ -128,7 +132,28 @@ func (e *Error) WithCause(cause error) *Error {
 // StackTrace returns a copy of the program counters captured for the error,
 // innermost call first.
 func (e *Error) StackTrace() []uintptr {
+	if e == nil {
+		return nil
+	}
+
 	return slices.Clone(e.stack)
+}
+
+// Frames resolves the stack trace into call frames, innermost call first.
+func (e *Error) Frames() iter.Seq[runtime.Frame] {
+	return func(yield func(runtime.Frame) bool) {
+		if e == nil || len(e.stack) == 0 {
+			return
+		}
+
+		frames := runtime.CallersFrames(e.stack)
+		for {
+			frame, more := frames.Next()
+			if !yield(frame) || !more {
+				return
+			}
+		}
+	}
 }
 
 // Format prints the message for %s, %v and %q, the underlying error with fields,
@@ -146,11 +171,15 @@ func (e *Error) Format(s fmt.State, verb rune) {
 
 // GoString returns the error in Go syntax.
 func (e *Error) GoString() string {
-	if e.err == nil {
-		return "&errors.Error{}"
+	if e == nil {
+		return "(*errors.Error)(nil)"
 	}
 
-	items := []string{fmt.Sprintf("err:%#v", e.err)}
+	var items []string
+
+	if e.err != nil {
+		items = append(items, fmt.Sprintf("err:%#v", e.err))
+	}
 
 	if e.cause != nil {
 		items = append(items, fmt.Sprintf("cause:%#v", e.cause))
@@ -166,6 +195,10 @@ func (e *Error) GoString() string {
 // LogValue returns the message, the fields and the cause as a slog group, without the
 // stack trace.
 func (e *Error) LogValue() slog.Value {
+	if e == nil {
+		return slog.AnyValue(nil)
+	}
+
 	attrs := []slog.Attr{slog.String("msg", e.Error())}
 
 	for _, key := range slices.Sorted(maps.Keys(e.fields)) {
@@ -180,18 +213,17 @@ func (e *Error) LogValue() slog.Value {
 }
 
 func (e *Error) details() string {
-	message := ""
-	if e.err != nil {
-		message = fmt.Sprintf("%+v", e.err)
+	if e == nil {
+		return "<nil>"
 	}
 
-	lines := []string{message}
+	lines := []string{fmt.Sprintf("%+v", e.err)}
 
 	for _, key := range slices.Sorted(maps.Keys(e.fields)) {
 		lines = append(lines, indent(fmt.Sprintf("%s=%v", key, e.fields[key])))
 	}
 
-	for frame := range e.frames() {
+	for frame := range e.Frames() {
 		lines = append(lines, indent(fmt.Sprintf("%s\n\t%s:%d", frame.Function, frame.File, frame.Line)))
 	}
 
@@ -200,22 +232,6 @@ func (e *Error) details() string {
 	}
 
 	return strings.Join(lines, "\n")
-}
-
-func (e *Error) frames() iter.Seq[runtime.Frame] {
-	return func(yield func(runtime.Frame) bool) {
-		if len(e.stack) == 0 {
-			return
-		}
-
-		frames := runtime.CallersFrames(e.stack)
-		for {
-			frame, more := frames.Next()
-			if !yield(frame) || !more {
-				return
-			}
-		}
-	}
 }
 
 func indent(text string) string {

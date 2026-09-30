@@ -18,6 +18,24 @@ func TestMultiError(t *testing.T) {
 		assert.Equal(t, errs.Len(), 1)
 		assert.Equal(t, errs.Error(), "EOF")
 	})
+	t.Run("nil receiver is readable", func(t *testing.T) {
+		var errs *MultiError
+
+		assert.Equal(t, errs.Error(), "<nil>")
+		assert.Equal(t, fmt.Sprintf("%v|%+v|%#v", errs, errs, errs), "<nil>|<nil>|(*errors.MultiError)(nil)")
+		assert.Empty(t, errs.Unwrap())
+		assert.Equal(t, errs.Len(), 0)
+		assert.NoError(t, errs.ErrorOrNil())
+		assert.Equal(t, logged(errs), "err=<nil>")
+		assert.NotErrorIs(t, errs, io.EOF)
+	})
+	t.Run("nil receiver panics when built on", func(t *testing.T) {
+		var errs *MultiError
+
+		assert.Panics(t, func() {
+			errs.Add(io.EOF)
+		})
+	})
 	t.Run("concurrent adds are all kept", func(t *testing.T) {
 		errs := NewMulti()
 

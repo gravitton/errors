@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -79,8 +80,8 @@ func TestError(t *testing.T) {
 	t.Run("zero value is an empty error", func(t *testing.T) {
 		var err Error
 
-		assert.Equal(t, err.Error(), "")
-		assert.Equal(t, fmt.Sprintf("%+v", &err), "")
+		assert.Equal(t, err.Error(), "<nil>")
+		assert.Equal(t, fmt.Sprintf("%+v", &err), "<nil>")
 		assert.Equal(t, fmt.Sprintf("%#v", &err), "&errors.Error{}")
 		assert.Empty(t, err.Fields())
 		assert.Empty(t, err.StackTrace())
@@ -91,7 +92,33 @@ func TestError(t *testing.T) {
 
 		assert.Equal(t, err.WithField("a", 1).Fields(), map[string]any{"a": 1})
 		assert.Empty(t, err.WithField("a", 1).StackTrace())
+		assert.Equal(t, fmt.Sprintf("%#v", err.WithField("a", 1)), `&errors.Error{fields:map[string]interface {}{"a":1}}`)
 		assert.Same(t, Wrap(&err), &err)
+	})
+	t.Run("nil receiver is readable", func(t *testing.T) {
+		var err *Error
+
+		assert.Equal(t, err.Error(), "<nil>")
+		assert.Equal(t, fmt.Sprintf("%v|%+v|%#v", err, err, err), "<nil>|<nil>|(*errors.Error)(nil)")
+		assert.Empty(t, err.Unwrap())
+		assert.Empty(t, err.Fields())
+		assert.Empty(t, err.StackTrace())
+		assert.Empty(t, slices.Collect(err.Frames()))
+		assert.Equal(t, logged(err), "err=<nil>")
+		assert.NotErrorIs(t, err, io.EOF)
+	})
+	t.Run("nil receiver panics when built on", func(t *testing.T) {
+		var err *Error
+
+		assert.Panics(t, func() {
+			err.WithField("a", 1)
+		})
+		assert.Panics(t, func() {
+			err.WithFields(map[string]any{"a": 1})
+		})
+		assert.Panics(t, func() {
+			err.WithCause(io.EOF)
+		})
 	})
 }
 
@@ -293,6 +320,23 @@ func TestError_StackTrace(t *testing.T) {
 	err.StackTrace()[0] = 0
 
 	assert.Equal(t, raisedIn(err), here())
+}
+
+func TestError_Frames(t *testing.T) {
+	t.Run("innermost call first", func(t *testing.T) {
+		var functions []string
+		for frame := range New("test").Frames() {
+			functions = append(functions, frame.Function)
+			break
+		}
+
+		assert.Equal(t, functions, []string{here()})
+	})
+	t.Run("none without a stack", func(t *testing.T) {
+		var err Error
+
+		assert.Empty(t, slices.Collect(err.Frames()))
+	})
 }
 
 func TestError_Format(t *testing.T) {

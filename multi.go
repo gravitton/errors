@@ -30,7 +30,7 @@ func Join(errs ...error) error {
 	return m.ErrorOrNil()
 }
 
-// Add adds the errors to the collection, skipping nils.
+// Add adds the errors to the collection, skipping nils. It panics on a nil collection.
 func (e *MultiError) Add(errs ...error) {
 	e.mutex.Lock()
 	defer e.mutex.Unlock()
@@ -52,6 +52,10 @@ func (e *MultiError) Error() string {
 // Unwrap returns the errors collected so far. Errors added later don't change the
 // returned slice.
 func (e *MultiError) Unwrap() []error {
+	if e == nil {
+		return nil
+	}
+
 	e.mutex.Lock()
 	defer e.mutex.Unlock()
 
@@ -60,6 +64,10 @@ func (e *MultiError) Unwrap() []error {
 
 // Len returns the number of collected errors.
 func (e *MultiError) Len() int {
+	if e == nil {
+		return 0
+	}
+
 	e.mutex.Lock()
 	defer e.mutex.Unlock()
 
@@ -91,6 +99,10 @@ func (e *MultiError) Format(s fmt.State, verb rune) {
 
 // GoString returns the collection in Go syntax.
 func (e *MultiError) GoString() string {
+	if e == nil {
+		return "(*errors.MultiError)(nil)"
+	}
+
 	errs := e.Unwrap()
 	if len(errs) == 0 {
 		return "&errors.MultiError{}"
@@ -106,6 +118,10 @@ func (e *MultiError) GoString() string {
 
 // LogValue returns the collected errors as a slog group keyed by their index.
 func (e *MultiError) LogValue() slog.Value {
+	if e == nil {
+		return slog.AnyValue(nil)
+	}
+
 	errs := e.Unwrap()
 
 	attrs := make([]slog.Attr, len(errs))
@@ -123,6 +139,10 @@ func (e *MultiError) details() string {
 }
 
 func (e *MultiError) join(text func(error) string) string {
+	if e == nil {
+		return "<nil>"
+	}
+
 	errs := e.Unwrap()
 
 	texts := make([]string, len(errs))
