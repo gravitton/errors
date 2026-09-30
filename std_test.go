@@ -8,6 +8,10 @@ import (
 	"github.com/gravitton/assert"
 )
 
+func TestErrUnsupported(t *testing.T) {
+	assert.Same(t, ErrUnsupported, errors.ErrUnsupported)
+}
+
 func TestUnwrap(t *testing.T) {
 	inner := errors.New("inner")
 
@@ -38,8 +42,4 @@ func TestAsType(t *testing.T) {
 	target, ok := AsType[*Error](fmt.Errorf("wrapped: %w", original))
 	assert.True(t, ok)
 	assert.Same(t, target, original)
-}
-
-func TestErrUnsupported(t *testing.T) {
-	assert.Same(t, ErrUnsupported, errors.ErrUnsupported)
 }

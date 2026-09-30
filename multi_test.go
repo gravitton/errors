@@ -51,6 +51,7 @@ func TestMultiError(t *testing.T) {
 				for range 100 {
 					_ = errs.Error()
 					_ = errs.GoString()
+					_ = errs.LogValue()
 					_ = errs.ErrorOrNil()
 					_ = append(errs.Unwrap(), io.EOF)
 				}
@@ -236,9 +237,20 @@ func TestMultiError_Format(t *testing.T) {
 
 func TestMultiError_GoString(t *testing.T) {
 	t.Run("empty", func(t *testing.T) {
-		assert.Equal(t, fmt.Sprintf("%#v", NewMulti()), "&errors.MultiError{errs:[]error(nil)}")
+		assert.Equal(t, fmt.Sprintf("%#v", NewMulti()), "&errors.MultiError{}")
 	})
 	t.Run("members in go syntax", func(t *testing.T) {
 		assert.Equal(t, fmt.Sprintf("%#v", Join(errors.New("foo"), io.EOF)), `&errors.MultiError{errs:[]error{&errors.errorString{s:"foo"}, &errors.errorString{s:"EOF"}}}`)
+	})
+}
+
+func TestMultiError_LogValue(t *testing.T) {
+	t.Run("members keyed by index", func(t *testing.T) {
+		errs := Join(New("a").WithField("x", 1), io.EOF)
+
+		assert.Equal(t, logged(errs), "err.0.msg=a err.0.x=1 err.1=EOF")
+	})
+	t.Run("empty collection is left out", func(t *testing.T) {
+		assert.Equal(t, logged(NewMulti()), "")
 	})
 }

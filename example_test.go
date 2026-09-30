@@ -3,22 +3,35 @@ package errors_test
 import (
 	"fmt"
 	"io"
+	"log/slog"
+	"os"
+	"slices"
 
 	"github.com/gravitton/errors"
 )
 
 var ErrNotFound = errors.Sentinel("not found")
 
+func newLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		ReplaceAttr: func(groups []string, attr slog.Attr) slog.Attr {
+			if len(groups) == 0 && attr.Key == slog.TimeKey {
+				return slog.Attr{}
+			}
+
+			return attr
+		},
+	}))
+}
+
 func ExampleNew() {
 	err := errors.New("boom")
 
 	fmt.Printf("%v\n", err)
 	fmt.Printf("%q\n", err)
-	fmt.Printf("%#v\n", err)
 	// Output:
 	// boom
 	// "boom"
-	// &errors.Error{err:&errors.errorString{s:"boom"}, fields:map[string]interface {}(nil), causes:[]error(nil)}
 }
 
 func ExampleNewf() {
@@ -30,24 +43,24 @@ func ExampleNewf() {
 }
 
 func ExampleWrap() {
-	err := errors.Wrap(io.EOF)
+	inner := errors.New("connection refused")
+	err := errors.Wrap(fmt.Errorf("load config: %w", inner))
 
-	fmt.Printf("%v\n", err)
-	fmt.Printf("%#v\n", err)
+	fmt.Println(err)
+	fmt.Println(slices.Equal(err.StackTrace(), inner.StackTrace()))
 	// Output:
-	// EOF
-	// &errors.Error{err:&errors.errorString{s:"EOF"}, fields:map[string]interface {}(nil), causes:[]error(nil)}
+	// load config: connection refused
+	// true
 }
 
 func ExampleError_Fields() {
-	err := ErrNotFound.WithFields(map[string]any{"id": 42, "table": "users"})
-	err = errors.Newf("load user: %w", err)
-	err = errors.Wrap(fmt.Errorf("handler: %w", err)).WithField("table", "accounts")
+	err := errors.Wrap(ErrNotFound).WithFields(map[string]any{"id": 42, "table": "users"})
+	err = err.WithField("table", "accounts")
 
 	fmt.Println(err)
 	fmt.Println(err.Fields())
 	// Output:
-	// handler: load user: not found
+	// not found
 	// map[id:42 table:accounts]
 }
 
@@ -55,25 +68,47 @@ func ExampleError_WithCause() {
 	cause := errors.New("connection refused").WithField("port", 5432)
 	err := errors.New("could not load config").WithCause(cause).WithCause(io.ErrClosedPipe)
 
-	fmt.Printf("%v\n", err)
-	fmt.Printf("%#v\n", err)
+	fmt.Println(err)
+	fmt.Println(errors.Is(err, io.ErrClosedPipe))
 	// Output:
 	// could not load config
-	// &errors.Error{err:&errors.errorString{s:"could not load config"}, fields:map[string]interface {}(nil), causes:[]error{&errors.Error{err:&errors.errorString{s:"connection refused"}, fields:map[string]interface {}{"port":5432}, causes:[]error(nil)}, &errors.errorString{s:"io: read/write on closed pipe"}}}
+	// true
 }
 
-func ExampleJoin() {
-	fmt.Println(errors.Join(nil, nil))
-	fmt.Println(errors.Join(io.EOF, nil))
-	fmt.Println(errors.Join(io.EOF, errors.New("line one\nline two"), io.ErrClosedPipe))
+func ExampleError_Format() {
+	err := errors.New("could not load config").WithField("path", "config.yml").WithCause(io.EOF)
+
+	fmt.Printf("%+v\n", err)
+	// could not load config
+	// 	path=config.yml
+	// 	github.com/gravitton/errors_test.ExampleError_Format
+	// 		/app/example_test.go:79
+	// 	...
+	// 	caused by: EOF
+}
+
+func ExampleError_GoString() {
+	var zero errors.Error
+	err := errors.New("boom")
+
+	fmt.Printf("%#v\n", &zero)
+	fmt.Printf("%#v\n", err)
+	fmt.Printf("%#v\n", err.WithField("id", 42))
+	fmt.Printf("%#v\n", err.WithCause(io.EOF))
 	// Output:
-	// <nil>
-	// EOF
-	// 3 errors occurred:
-	// 	1. EOF
-	// 	2. line one
-	// 		line two
-	// 	3. io: read/write on closed pipe
+	// &errors.Error{}
+	// &errors.Error{err:&errors.errorString{s:"boom"}}
+	// &errors.Error{err:&errors.errorString{s:"boom"}, fields:map[string]interface {}{"id":42}}
+	// &errors.Error{err:&errors.errorString{s:"boom"}, cause:&errors.errorString{s:"EOF"}}
+}
+
+func ExampleError_LogValue() {
+	cause := errors.New("connection refused").WithField("port", 5432)
+	err := errors.Wrap(ErrNotFound).WithField("id", 42).WithCause(cause)
+
+	newLogger().Error("load user", "err", err)
+	// Output:
+	// level=ERROR msg="load user" err.msg="not found" err.id=42 err.cause.msg="connection refused" err.cause.port=5432
 }
 
 func ExampleMultiError() {
@@ -84,13 +119,50 @@ func ExampleMultiError() {
 	errs.Add(errors.Join(io.ErrUnexpectedEOF, io.ErrClosedPipe))
 
 	fmt.Printf("%v\n", errs)
-	fmt.Printf("%#v\n", errs)
 	// Output:
 	// <nil>
-	// 2 errors occurred:
-	// 	1. EOF
-	// 	2. 2 errors occurred:
-	// 		1. unexpected EOF
-	// 		2. io: read/write on closed pipe
-	// &errors.MultiError{errs:[]error{&errors.errorString{s:"EOF"}, &errors.MultiError{errs:[]error{&errors.errorString{s:"unexpected EOF"}, &errors.errorString{s:"io: read/write on closed pipe"}}}}}
+	// EOF
+	// unexpected EOF
+	// io: read/write on closed pipe
+}
+
+func ExampleJoin() {
+	fmt.Println(errors.Join(nil, nil))
+	fmt.Println(errors.Join(io.EOF, nil))
+	fmt.Println(errors.Join(io.EOF, errors.New("line one\nline two"), io.ErrClosedPipe))
+	// Output:
+	// <nil>
+	// EOF
+	// EOF
+	// line one
+	// line two
+	// io: read/write on closed pipe
+}
+
+func ExampleMultiError_Format() {
+	errs := errors.Join(errors.New("connection refused").WithField("port", 5432), io.EOF)
+
+	fmt.Printf("%+v\n", errs)
+	// connection refused
+	// 	port=5432
+	// 	github.com/gravitton/errors_test.ExampleMultiError_Format
+	// 		/app/example_test.go:143
+	// 	...
+	// EOF
+}
+
+func ExampleMultiError_GoString() {
+	fmt.Printf("%#v\n", errors.NewMulti())
+	fmt.Printf("%#v\n", errors.Join(io.EOF, errors.New("boom").WithField("id", 42)))
+	// Output:
+	// &errors.MultiError{}
+	// &errors.MultiError{errs:[]error{&errors.errorString{s:"EOF"}, &errors.Error{err:&errors.errorString{s:"boom"}, fields:map[string]interface {}{"id":42}}}}
+}
+
+func ExampleMultiError_LogValue() {
+	errs := errors.Join(errors.New("connection refused").WithField("port", 5432), io.EOF)
+
+	newLogger().Error("load users", "err", errs)
+	// Output:
+	// level=ERROR msg="load users" err.0.msg="connection refused" err.0.port=5432 err.1=EOF
 }
