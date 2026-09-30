@@ -20,12 +20,13 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - `Error.Unwrap` returns `[]error` with the underlying error and the cause, so `errors.Is` and `errors.As` see both, and `errors.Unwrap` returns nil for an `*Error` (**breaking**)
 - `Error.Is` matches a target `*Error` by its underlying error, found through the receiver's underlying error or cause, instead of by message and fields, so copies made by `With*` match the error they came from (**breaking**)
 - `Error.WithCause` joins a new cause with the attached ones into one flat `MultiError` instead of replacing them (**breaking**)
-- `Error.WithCause` attaches a copy of the members of a `MultiError` cause, so adding to it later doesn't change the error
+- `Error.WithCause` attaches a copy of the members of a `MultiError` cause, flattening nested collections, so adding to any of them later doesn't change the error
 - `Error.WithCause` attaches nothing for `nil`, a nil `*Error` or a nil or empty `MultiError`
 - `Error.WithField`, `WithFields` and `WithCause` panic on a nil receiver instead of returning nil (**breaking**)
 - `Error.Format` prints for `%+v` the underlying error, the fields, the stack trace and then every cause, all with `%+v` and indented one tab
 - `Error.Format` honors width, precision and flags for `%s`, `%v` and `%q`
 - `Error.StackTrace` returns a copy
+- `Wrap` returns nil for a nil `*MultiError`, as it does for a nil `*Error`
 - `Wrap` and `Newf` reuse the stack trace of the first `*Error` in the `Unwrap() error` chain instead of capturing a new one
 - `MultiError.Error` joins the messages by newlines like `errors.Join`, without the `N errors occurred:` header, and returns `<nil>` for a nil receiver (**breaking**)
 - `MultiError.Add` and `Join` skip a nil `*Error` and a nil `*MultiError` as they skip `nil`, so `Join(errors.Wrap(nil))` is nil (**breaking**)

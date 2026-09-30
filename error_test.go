@@ -185,8 +185,13 @@ func TestNewf(t *testing.T) {
 }
 
 func TestWrap(t *testing.T) {
-	t.Run("nil is nil", func(t *testing.T) {
+	t.Run("nil, a nil error or a nil collection is nil", func(t *testing.T) {
+		var missing *Error
+		var none *MultiError
+
 		assert.True(t, Wrap(nil) == nil)
+		assert.True(t, Wrap(missing) == nil)
+		assert.True(t, Wrap(none) == nil)
 	})
 	t.Run("an error is unchanged", func(t *testing.T) {
 		err := New("test")
@@ -367,6 +372,16 @@ func TestError_WithCause(t *testing.T) {
 
 		assert.Equal(t, err.Unwrap()[1].(*MultiError).Unwrap(), []error{io.EOF, io.ErrClosedPipe})
 		assert.Same(t, New("test").WithCause(Join(io.EOF)).Unwrap()[1], io.EOF)
+	})
+	t.Run("a nested collection adds a copy of its members", func(t *testing.T) {
+		nested := Join(io.EOF, io.ErrClosedPipe).(*MultiError)
+		err := New("test").WithCause(Join(io.ErrUnexpectedEOF, nested))
+		single := New("test").WithCause(Join(nested))
+		nested.Add(io.ErrShortWrite)
+
+		assert.Equal(t, err.Unwrap()[1].(*MultiError).Unwrap(), []error{io.ErrUnexpectedEOF, io.EOF, io.ErrClosedPipe})
+		assert.Equal(t, single.Unwrap()[1].(*MultiError).Unwrap(), []error{io.EOF, io.ErrClosedPipe})
+		assert.Length(t, New("test").WithCause(Join(NewMulti())).Unwrap(), 1)
 	})
 	t.Run("a collection as the first cause is flattened by the next", func(t *testing.T) {
 		err := New("test").WithCause(Join(io.EOF, io.ErrClosedPipe)).WithCause(io.ErrShortWrite)

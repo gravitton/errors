@@ -61,7 +61,8 @@ points nowhere useful. Wrap the sentinel where it is returned, which captures th
 
 Check the error before wrapping it, never after: `Wrap(nil)` returns a nil `*Error`, which is not `nil` once stored in
 an `error`. Reading a nil `*Error` or `*MultiError` is safe and prints `<nil>`, but `With*` and `Add` panic on one.
-`Add`, `Join` and `WithCause` skip one, so it never ends up in a collection or as a cause.
+`Wrap` returns `nil` for one, and `Add`, `Join` and `WithCause` skip one, so it never ends up in a collection or as a
+cause.
 
 ```go
 if err := load(); err != nil {
@@ -118,8 +119,8 @@ if err := write(f); err != nil {
 }
 ```
 
-A collection attaches a copy of its members, and an empty one attaches nothing, so a collection can be attached as it
-is:
+A collection attaches a copy of its members, with nested collections flattened, and an empty one attaches nothing, so
+a collection can be attached as it is:
 
 ```go
 return errors.New("could not process batch").WithCause(errs)
@@ -223,6 +224,9 @@ The stack trace is left out of logs; it belongs to `%+v` and error reporting.
 `StackTrace() []uintptr` is the method Sentry looks for, so it picks up the stack trace; `Frames()` resolves it into
 `runtime.Frame` values for other reporters. A reporter should walk the whole tree with `Unwrap` to collect the fields
 of every `*Error` in it, and skip a stack trace equal to the one before, since wrapping errors share it.
+
+Report an error where it is handled, not through a log handler: `slog` turns an error into its `LogValue` group before
+the handler sees it, so a handler that looks for an `error` among the attributes to report finds none.
 
 Full reference: [pkg.go.dev][link-go-dev-reference].
 

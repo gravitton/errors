@@ -40,9 +40,9 @@ func Newf(format string, args ...any) *Error {
 
 // Wrap returns err unchanged if it is an Error, or else converts it into one with the stack trace of
 // the first Error in its Unwrap chain, which is closer to where the error was raised, or else the
-// current one. A nil err returns nil.
+// current one. A nil err, Error or MultiError returns nil.
 func Wrap(err error) *Error {
-	if err == nil {
+	if !exists(err) {
 		return nil
 	}
 
@@ -260,11 +260,17 @@ func members(err error) []error {
 		return nil
 	}
 
-	if errs, ok := err.(*MultiError); ok {
-		return errs.Unwrap()
+	errs, ok := err.(*MultiError)
+	if !ok {
+		return []error{err}
 	}
 
-	return []error{err}
+	var flat []error
+	for _, member := range errs.Unwrap() {
+		flat = append(flat, members(member)...)
+	}
+
+	return flat
 }
 
 func exists(err error) bool {
