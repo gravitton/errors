@@ -6,7 +6,10 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 
-## [Unreleased](https://github.com/gravitton/errors/compare/v1.3.0...main)
+## [Unreleased](https://github.com/gravitton/errors/compare/v1.4.0...main)
+
+
+## [v1.4.0](https://github.com/gravitton/errors/compare/v1.3.0...v1.4.0) (2026-09-30)
 ### Added
 - `Sentinel` creates a plain error without a stack trace, for package-level errors
 - `ErrUnsupported` re-exported from the standard library
