@@ -261,6 +261,13 @@ func TestError_Is(t *testing.T) {
 		assert.ErrorIs(t, Newf("outer: %w", errSentinel), Wrap(errSentinel))
 		assert.NotErrorIs(t, Wrap(errSentinel), Newf("outer: %w", errSentinel))
 	})
+	t.Run("matches through the cause, however deep", func(t *testing.T) {
+		err := New("test").WithCause(errSentinel)
+
+		assert.ErrorIs(t, err, Wrap(errSentinel))
+		assert.ErrorIs(t, Wrap(fmt.Errorf("outer: %w", err)), Wrap(errSentinel))
+		assert.NotErrorIs(t, fmt.Errorf("outer: %w", errSentinel), Wrap(errSentinel))
+	})
 	t.Run("nil target matches nothing", func(t *testing.T) {
 		var target *Error
 

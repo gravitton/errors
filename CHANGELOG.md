@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ### Changed
 - `Error.Unwrap` returns `[]error` with the underlying error and the cause, so `errors.Is` and `errors.As` see both, and `errors.Unwrap` returns nil for an `*Error` (**breaking**)
-- `Error.Is` matches a target `*Error` by its underlying error instead of by message and fields, so copies made by `With*` match the error they came from (**breaking**)
+- `Error.Is` matches a target `*Error` by its underlying error, found through the receiver's underlying error or cause, instead of by message and fields, so copies made by `With*` match the error they came from (**breaking**)
 - `Error.WithCause` joins a new cause with the attached ones into one flat `MultiError` instead of replacing them (**breaking**)
 - `Error.WithCause` attaches a copy of the members of a `MultiError` cause, so adding to it later doesn't change the error
 - `Error.WithCause` attaches nothing for `nil`, a nil `*Error` or a nil or empty `MultiError`

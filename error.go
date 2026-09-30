@@ -81,15 +81,15 @@ func (e *Error) Unwrap() []error {
 	return []error{e.err, e.cause}
 }
 
-// Is reports whether target is an Error whose underlying error matches this one's, so copies
-// made by the With methods match the error they came from.
+// Is reports whether target is an Error whose underlying error this one matches, through its
+// own underlying error or its cause, so copies made by the With methods match the error they came from.
 func (e *Error) Is(target error) bool {
 	other, ok := target.(*Error)
-	if !ok || e == nil || other == nil || other.err == nil {
+	if !ok || other == nil || other.err == nil {
 		return false
 	}
 
-	return errors.Is(e.err, other.err)
+	return errors.Is(e, other.err)
 }
 
 // Fields returns a copy of the fields.
@@ -126,6 +126,7 @@ func (e *Error) WithCause(cause error) *Error {
 
 	switch len(causes) {
 	case 0:
+		// no-op
 	case 1:
 		derived.cause = causes[0]
 	default:

@@ -89,7 +89,7 @@ errors.Is(err.WithField("attempt", 3), err) // true
 ```
 
 Match a sentinel by the sentinel itself, not by a `Wrap` of it: an `*Error` target is only matched by an `*Error` in
-the tree, never by a plain wrapper or a plain cause around the sentinel.
+the tree that wraps the sentinel or has it as a cause, never by a plain wrapper around the sentinel.
 
 ```go
 err := fmt.Errorf("load: %w", ErrNotFound)
@@ -149,6 +149,16 @@ errs := errors.NewMulti()
 errs.Add(process(1), process(2)) // nils, nil *Errors and nil *MultiErrors are skipped
 
 return errs.ErrorOrNil()         // nil when nothing was added
+```
+
+An empty collection is kept when added, since errors may be added to it later, so the collection holding it is not
+empty even while it stays so:
+
+```go
+child := errors.NewMulti()
+errs.Add(child)
+
+errs.ErrorOrNil() // not nil, with an empty message
 ```
 
 ```go
