@@ -115,6 +115,9 @@ errors.Is(outer, ErrNotFound) // true
 
 ### Collecting
 
+A `MultiError` collects errors into a single `error`. It is safe for concurrent use, so goroutines can add to one
+collection without extra locking.
+
 ```go
 errs := errors.NewMulti()
 errs.Add(process(1), process(2)) // nils are skipped
@@ -186,8 +189,9 @@ Full reference: [pkg.go.dev][link-go-dev-reference].
 
 ## Differences from the standard library
 
-- `errors.Unwrap` returns `nil` for an `*Error`, since it unwraps to its underlying error and its cause; use `Is` and
-  `As`.
+- `errors.Unwrap` returns `nil` for every `*Error`, as it does for `errors.Join`: it only follows `Unwrap() error`,
+  and `*Error` implements `Unwrap() []error` to expose both its underlying error and its cause. Use `Is` and `As`, or
+  walk `Unwrap() []error`.
 - `New` returns `*Error`, so `err := errors.New("x")` declares an `*Error` that can't be assigned a plain `error`
   later.
 - Package-level `New` errors report package initialization as their stack trace; turn them into `Sentinel`s.
