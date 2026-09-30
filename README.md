@@ -117,7 +117,8 @@ if err := write(f); err != nil {
 }
 ```
 
-An empty collection attaches nothing, so a collection can be attached as it is:
+A collection attaches a copy of its members, and an empty one attaches nothing, so a collection can be attached as it
+is:
 
 ```go
 return errors.New("could not process batch").WithCause(errs)

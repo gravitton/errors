@@ -122,6 +122,9 @@ func TestError(t *testing.T) {
 		assert.Panics(t, func() {
 			err.WithCause(io.EOF)
 		})
+		assert.Panics(t, func() {
+			err.WithCause(nil)
+		})
 	})
 }
 
@@ -324,14 +327,14 @@ func TestError_WithCause(t *testing.T) {
 		assert.Equal(t, err.StackTrace(), original.StackTrace())
 		assert.Length(t, original.Unwrap(), 1)
 	})
-	t.Run("nil or an empty collection returns the error", func(t *testing.T) {
+	t.Run("nil, a nil error or an empty collection attaches nothing", func(t *testing.T) {
 		err := New("test")
 		var missing *Error
 
-		assert.Same(t, err.WithCause(nil), err)
-		assert.Same(t, err.WithCause(NewMulti()), err)
+		assert.Equal(t, err.WithCause(nil).Unwrap(), err.Unwrap())
+		assert.Equal(t, err.WithCause(missing).Unwrap(), err.Unwrap())
+		assert.Equal(t, err.WithCause(NewMulti()).Unwrap(), err.Unwrap())
 		assert.Same(t, err.WithCause(io.EOF).WithCause(NewMulti()).Unwrap()[1], io.EOF)
-		assert.True(t, missing.WithCause(nil) == nil)
 	})
 	t.Run("a second cause is joined", func(t *testing.T) {
 		err := New("test").WithCause(io.EOF).WithCause(io.ErrClosedPipe)
@@ -345,6 +348,14 @@ func TestError_WithCause(t *testing.T) {
 		err := New("test").WithCause(io.EOF).WithCause(io.ErrClosedPipe).WithCause(Join(io.ErrShortWrite, io.ErrNoProgress))
 
 		assert.Equal(t, err.Unwrap()[1].(*MultiError).Unwrap(), []error{io.EOF, io.ErrClosedPipe, io.ErrShortWrite, io.ErrNoProgress})
+	})
+	t.Run("a collection adds a copy of its members", func(t *testing.T) {
+		errs := Join(io.EOF, io.ErrClosedPipe).(*MultiError)
+		err := New("test").WithCause(errs)
+		errs.Add(io.ErrShortWrite)
+
+		assert.Equal(t, err.Unwrap()[1].(*MultiError).Unwrap(), []error{io.EOF, io.ErrClosedPipe})
+		assert.Same(t, New("test").WithCause(Join(io.EOF)).Unwrap()[1], io.EOF)
 	})
 	t.Run("a collection as the first cause is flattened by the next", func(t *testing.T) {
 		err := New("test").WithCause(Join(io.EOF, io.ErrClosedPipe)).WithCause(io.ErrShortWrite)

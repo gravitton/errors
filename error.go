@@ -117,19 +117,15 @@ func (e *Error) WithFields(fields map[string]any) *Error {
 }
 
 // WithCause returns a copy of the error with the cause attached, joined with the causes
-// it already has into one flat collection. A nil cause or an empty collection returns
-// the error unchanged; otherwise it panics on a nil error.
+// it already has into one flat collection. It panics on a nil error.
 func (e *Error) WithCause(cause error) *Error {
-	added := members(cause)
-	if len(added) == 0 {
-		return e
-	}
+	causes := slices.Concat(members(e.cause), members(cause))
 
 	derived := *e
-	derived.cause = cause
+	derived.cause = Join(causes...)
 
-	if e.cause != nil {
-		derived.cause = Join(slices.Concat(members(e.cause), added)...)
+	if len(causes) == 1 {
+		derived.cause = causes[0]
 	}
 
 	return &derived
@@ -260,9 +256,13 @@ func members(err error) []error {
 		return nil
 	case *MultiError:
 		return err.Unwrap()
-	default:
-		return []error{err}
+	case *Error:
+		if err == nil {
+			return nil
+		}
 	}
+
+	return []error{err}
 }
 
 func indent(text string) string {
