@@ -225,8 +225,9 @@ The stack trace is left out of logs; it belongs to `%+v` and error reporting.
 `runtime.Frame` values for other reporters. A reporter should walk the whole tree with `Unwrap` to collect the fields
 of every `*Error` in it, and skip a stack trace equal to the one before, since wrapping errors share it.
 
-Report an error where it is handled, not through a log handler: `slog` turns an error into its `LogValue` group before
-the handler sees it, so a handler that looks for an `error` among the attributes to report finds none.
+A `slog` handler reporting errors gets the `*Error` from `Value.Any()` before resolving the value; once resolved, it is
+the `LogValue` group. Handlers that resolve first, such as Sentry's, and `ReplaceAttr` hooks of the built-in handlers
+find no `error`, so report the error where it is handled instead.
 
 Full reference: [pkg.go.dev][link-go-dev-reference].
 

@@ -189,9 +189,9 @@ func TestWrap(t *testing.T) {
 		var missing *Error
 		var none *MultiError
 
-		assert.True(t, Wrap(nil) == nil)
-		assert.True(t, Wrap(missing) == nil)
-		assert.True(t, Wrap(none) == nil)
+		assert.Nil(t, Wrap(nil))
+		assert.Nil(t, Wrap(missing))
+		assert.Nil(t, Wrap(none))
 	})
 	t.Run("an error is unchanged", func(t *testing.T) {
 		err := New("test")
@@ -496,7 +496,7 @@ func TestError_GoString(t *testing.T) {
 		assert.Equal(t, fmt.Sprintf("%#v", Wrap(errSentinel).WithCause(io.EOF)), `&errors.Error{err:&errors.errorString{s:"sentinel"}, cause:&errors.errorString{s:"EOF"}}`)
 	})
 	t.Run("foreign wrapper as fmt prints it", func(t *testing.T) {
-		assert.Contains(t, fmt.Sprintf("%#v", Newf("outer: %w", io.EOF)), `&errors.Error{err:&fmt.wrapError{msg:"outer: EOF", err:(*errors.errorString)(0x`)
+		assert.HasPrefix(t, fmt.Sprintf("%#v", Newf("outer: %w", io.EOF)), `&errors.Error{err:&fmt.wrapError{msg:"outer: EOF", err:(*errors.errorString)(0x`)
 	})
 }
 
