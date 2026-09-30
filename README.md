@@ -27,6 +27,7 @@ Structured errors with fields, causes, and stack traces, plus a concurrent-safe 
 - **Stack traces** captured where the error is raised and printed with `%+v`.
 - **Fields** – key-value context attached to an error.
 - **Cause** – the error that caused this one, visible to `Is` and `As`.
+- **Identity** – every copy made by `With*` is still the error it came from for `errors.Is`.
 - **Immutable** – every `With*` method returns a new error.
 - **Structured logging** – errors are logged by `slog` as groups of their message, fields and cause.
 - **Multi error** – concurrent-safe collection of errors as a single `error`, with `Join` on top.
@@ -79,10 +80,17 @@ err.Fields()                // map[id:42 table:users]
 errors.Is(err, ErrNotFound) // true
 ```
 
+Fields don't change identity: a copy made by `With*` is still the error it came from.
+
+```go
+err := errors.New("timeout")
+errors.Is(err.WithField("attempt", 3), err) // true
+```
+
 ### Cause
 
-The error that caused this one, or one that happened while handling it. Another cause is joined with the one already
-attached.
+The error that caused this one, or one that happened while handling it. Another cause is joined with the ones already
+attached into one flat `MultiError`.
 
 ```go
 if err := load(); err != nil {
@@ -103,7 +111,8 @@ if err := write(f); err != nil {
 ### Wrapping
 
 Wrapping an `*Error`, with `Wrap` or with `Newf` and `%w`, reuses its stack trace, which is closer to where the error
-was raised. Its fields and cause stay on it, reachable with `errors.As`:
+was raised. Only the `Unwrap() error` chain is searched: a collection, such as `Join`, gets the current stack trace.
+The fields and cause of the wrapped error stay on it, reachable with `errors.As`:
 
 ```go
 outer := errors.Newf("load user: %w", err)
@@ -171,10 +180,10 @@ fmt.Printf("%+v", err)
 
 ```go
 logger.Error("load failed", "err", err)
-// level=ERROR msg="load failed" err.msg="not found" err.id=42 err.table=users
+// level=ERROR msg="load failed" err.msg="not found" err.fields.id=42 err.fields.table=users
 
 logger.Error("batch failed", "err", errors.Join(err, io.EOF))
-// level=ERROR msg="batch failed" err.0.msg="not found" err.0.id=42 err.0.table=users err.1=EOF
+// level=ERROR msg="batch failed" err.0.msg="not found" err.0.fields.id=42 err.0.fields.table=users err.1=EOF
 ```
 
 The stack trace is left out of logs; it belongs to `%+v` and error reporting.

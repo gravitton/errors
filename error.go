@@ -15,7 +15,7 @@ import (
 const maxFrames = 32
 
 // Error is an immutable error with key-value fields, an optional cause, and a stack trace.
-// The zero value is an error with an empty message.
+// The zero value has no underlying error and its message is <nil>.
 type Error struct {
 	err    error
 	cause  error
@@ -38,8 +38,8 @@ func Newf(format string, args ...any) *Error {
 	return wrap(fmt.Errorf(format, args...))
 }
 
-// Wrap converts err into an Error with the stack trace of the first Error in its tree, which
-// is closer to where the error was raised, or else the current one. A nil err returns nil.
+// Wrap converts err into an Error with the stack trace of the first Error in its Unwrap chain,
+// which is closer to where the error was raised, or else the current one. A nil err returns nil.
 func Wrap(err error) *Error {
 	if err == nil {
 		return nil
@@ -53,16 +53,9 @@ func wrap(err error) *Error {
 		return e
 	}
 
-	if inner, ok := errors.AsType[*Error](err); ok {
-		return &Error{
-			err:   err,
-			stack: inner.stack,
-		}
-	}
-
 	return &Error{
 		err:   err,
-		stack: callers(),
+		stack: stackOf(err),
 	}
 }
 
@@ -85,6 +78,17 @@ func (e *Error) Unwrap() []error {
 	}
 
 	return []error{e.err, e.cause}
+}
+
+// Is reports whether target is an Error whose underlying error matches this one's, so copies
+// made by the With methods match the error they came from.
+func (e *Error) Is(target error) bool {
+	other, ok := target.(*Error)
+	if !ok || e == nil || other == nil {
+		return false
+	}
+
+	return errors.Is(e.err, other.err)
 }
 
 // Fields returns a copy of the fields.
@@ -111,9 +115,9 @@ func (e *Error) WithFields(fields map[string]any) *Error {
 	return &derived
 }
 
-// WithCause returns a copy of the error with the cause attached, joined with the cause
-// it already has. A nil cause returns the error unchanged; otherwise it panics on a nil
-// error.
+// WithCause returns a copy of the error with the cause attached, joined with the causes
+// it already has into one flat collection. A nil cause returns the error unchanged;
+// otherwise it panics on a nil error.
 func (e *Error) WithCause(cause error) *Error {
 	if cause == nil {
 		return e
@@ -123,7 +127,7 @@ func (e *Error) WithCause(cause error) *Error {
 	derived.cause = cause
 
 	if e.cause != nil {
-		derived.cause = Join(e.cause, cause)
+		derived.cause = Join(slices.Concat(members(e.cause), members(cause))...)
 	}
 
 	return &derived
@@ -192,17 +196,21 @@ func (e *Error) GoString() string {
 	return "&errors.Error{" + strings.Join(items, ", ") + "}"
 }
 
-// LogValue returns the message, the fields and the cause as a slog group, without the
-// stack trace.
+// LogValue returns the message, a group of the fields and the cause as a slog group,
+// without the stack trace.
 func (e *Error) LogValue() slog.Value {
 	if e == nil {
 		return slog.AnyValue(nil)
 	}
 
-	attrs := []slog.Attr{slog.String("msg", e.Error())}
-
+	fields := make([]slog.Attr, 0, len(e.fields))
 	for _, key := range slices.Sorted(maps.Keys(e.fields)) {
-		attrs = append(attrs, slog.Any(key, e.fields[key]))
+		fields = append(fields, slog.Any(key, e.fields[key]))
+	}
+
+	attrs := []slog.Attr{
+		slog.String("msg", e.Error()),
+		slog.GroupAttrs("fields", fields...),
 	}
 
 	if e.cause != nil {
@@ -234,13 +242,31 @@ func (e *Error) details() string {
 	return strings.Join(lines, "\n")
 }
 
+func stackOf(err error) []uintptr {
+	for ; err != nil; err = errors.Unwrap(err) {
+		if inner, ok := err.(*Error); ok && inner != nil {
+			return inner.stack
+		}
+	}
+
+	return callers()
+}
+
+func members(err error) []error {
+	if joined, ok := err.(*MultiError); ok {
+		return joined.Unwrap()
+	}
+
+	return []error{err}
+}
+
 func indent(text string) string {
 	return "\t" + strings.ReplaceAll(text, "\n", "\n\t")
 }
 
 func callers() []uintptr {
 	var stack [maxFrames]uintptr
-	n := runtime.Callers(4, stack[:])
+	n := runtime.Callers(5, stack[:])
 
 	return slices.Clone(stack[:n])
 }

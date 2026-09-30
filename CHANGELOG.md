@@ -11,14 +11,15 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - `Sentinel` creates a plain error without a stack trace, for package-level errors
 - `ErrUnsupported` re-exported from the standard library
 - `Error.GoString`, used by `%#v`: a keyed Go literal of the fields that are set, without the stack trace
-- `Error.LogValue` and `MultiError.LogValue` implement `slog.LogValuer`: an `*Error` is logged as a group of its message, fields and cause, without the stack trace, and a `MultiError` as a group of its members keyed by their index
+- `Error.LogValue` and `MultiError.LogValue` implement `slog.LogValuer`: an `*Error` is logged as a group of its message, a `fields` group and its cause, without the stack trace, and a `MultiError` as a group of its members keyed by their index
 - `MultiError.Format` implements `fmt.Formatter`: `%+v` joins the members formatted with `%+v` by newlines
 - Examples of creating, wrapping, fields, causes, collections and their `%+v`, `%#v` and `slog` output
 
 ### Changed
-- `Wrap` and `Newf` reuse the stack trace of the first `*Error` in the wrapped error's tree instead of capturing a new one
+- `Wrap` and `Newf` reuse the stack trace of the first `*Error` in the wrapped error's `Unwrap() error` chain instead of capturing a new one
 - `Error.Unwrap` returns `[]error` holding the underlying error and the cause, so both are visible to `errors.Is` and `errors.As`, and `errors.Unwrap` returns nil for an `*Error` (**breaking**)
-- `Error.WithCause` joins another cause with the one already attached instead of replacing it (**breaking**)
+- `Error.Is` matches a target `*Error` by its underlying error instead of by message and fields, so copies made by `With*` match the error they came from (**breaking**)
+- `Error.WithCause` joins another cause with the ones already attached into one flat `MultiError` instead of replacing it (**breaking**)
 - `Error.Format` honors width, precision and flags for every verb, and `%+v` prints the underlying error with `%+v`, then the fields, the stack trace and the cause formatted with `%+v`, each indented one tab
 - `Error.StackTrace` returns a copy
 - `MultiError.Error` joins the messages by newlines like `errors.Join`, without the `N errors occurred:` header (**breaking**)
@@ -26,7 +27,6 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Nil receivers: `Error.WithField`, `Error.WithFields`, `Error.WithCause` and `MultiError.Add` panic instead of returning nil or doing nothing, and `Error` returns `<nil>` instead of an empty string, as it does for the zero value (**breaking**)
 
 ### Removed
-- `Error.Is`, errors are matched by identity through `errors.Is` instead of by message and fields (**breaking**)
 - `MultiError.Errors`, use `MultiError.Unwrap` instead (**breaking**)
 
 

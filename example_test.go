@@ -108,7 +108,7 @@ func ExampleError_LogValue() {
 
 	newLogger().Error("load user", "err", err)
 	// Output:
-	// level=ERROR msg="load user" err.msg="not found" err.id=42 err.cause.msg="connection refused" err.cause.port=5432
+	// level=ERROR msg="load user" err.msg="not found" err.fields.id=42 err.cause.msg="connection refused" err.cause.fields.port=5432
 }
 
 func ExampleMultiError() {
@@ -164,5 +164,5 @@ func ExampleMultiError_LogValue() {
 
 	newLogger().Error("load users", "err", errs)
 	// Output:
-	// level=ERROR msg="load users" err.0.msg="connection refused" err.0.port=5432 err.1=EOF
+	// level=ERROR msg="load users" err.0.msg="connection refused" err.0.fields.port=5432 err.1=EOF
 }

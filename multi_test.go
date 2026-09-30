@@ -266,7 +266,7 @@ func TestMultiError_LogValue(t *testing.T) {
 	t.Run("members keyed by index", func(t *testing.T) {
 		errs := Join(New("a").WithField("x", 1), io.EOF)
 
-		assert.Equal(t, logged(errs), "err.0.msg=a err.0.x=1 err.1=EOF")
+		assert.Equal(t, logged(errs), "err.0.msg=a err.0.fields.x=1 err.1=EOF")
 	})
 	t.Run("empty collection is left out", func(t *testing.T) {
 		assert.Equal(t, logged(NewMulti()), "")
