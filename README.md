@@ -117,6 +117,13 @@ if err := write(f); err != nil {
 }
 ```
 
+Attach a collection through `ErrorOrNil()`, not the collection itself: an empty `MultiError` is still an error, and
+becomes a cause that prints and logs nothing.
+
+```go
+return errors.New("could not process batch").WithCause(errs.ErrorOrNil())
+```
+
 ### Wrapping
 
 Wrapping an `*Error`, with `Wrap` or with `Newf` and `%w`, reuses its stack trace, which is closer to where the error
@@ -182,8 +189,9 @@ fmt.Printf("%+v", err)
 //		caused by: connection refused
 ```
 
-`%+v` shows the details of the outermost `*Error` only. A `MultiError` joins its members with newlines, as
-`errors.Join` does, with `%+v` applied to every member.
+`%+v` applies to the underlying error and to every cause, so their details are printed too. An `*Error` wrapped with
+`%w` is the exception: `fmt` prints only the wrapper's message, so its fields and cause are left out, reachable with
+`errors.As`. A `MultiError` joins its members with newlines, as `errors.Join` does, with `%+v` applied to every member.
 
 ### Logging
 

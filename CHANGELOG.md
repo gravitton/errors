@@ -10,24 +10,30 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Added
 - `Sentinel` creates a plain error without a stack trace, for package-level errors
 - `ErrUnsupported` re-exported from the standard library
-- `Error.GoString`, used by `%#v`: a keyed Go literal of the fields that are set, without the stack trace
-- `Error.LogValue` and `MultiError.LogValue` implement `slog.LogValuer`: an `*Error` is logged as a group of its message, a `fields` group and its cause, without the stack trace, and a `MultiError` as a group of its members keyed by their index
-- `MultiError.Format` implements `fmt.Formatter`: `%+v` joins the members formatted with `%+v` by newlines
-- Examples of creating, wrapping, fields, causes, collections and their `%+v`, `%#v` and `slog` output
+- `Error.GoString` prints a keyed Go literal for `%#v`, without the stack trace
+- `Error.LogValue` logs the message, the fields and the cause as a `slog` group, without the stack trace
+- `MultiError.LogValue` logs the members as a `slog` group keyed by their index
+- `MultiError.Format` prints every member with `%+v` for `%+v`
+- Examples of creating, wrapping, fields, causes, collections, formatting and logging
 
 ### Changed
-- `Wrap` and `Newf` reuse the stack trace of the first `*Error` in the wrapped error's `Unwrap() error` chain instead of capturing a new one
-- `Error.Unwrap` returns `[]error` holding the underlying error and the cause, so both are visible to `errors.Is` and `errors.As`, and `errors.Unwrap` returns nil for an `*Error` (**breaking**)
-- `Error.Is` matches a target `*Error` by its underlying error instead of by message and fields, so copies made by `With*` match the error they came from, and a target without an underlying error, such as the zero value, matches nothing (**breaking**)
-- `Error.WithCause` joins another cause with the ones already attached into one flat `MultiError` instead of replacing it (**breaking**)
-- `Error.Format` honors width, precision and flags for `%s`, `%v` and `%q`, and `%+v` prints the underlying error with `%+v`, then the fields, the stack trace and every cause, each member of a joined cause on its own `caused by:` line, formatted with `%+v`, each indented one tab
+- `Error.Unwrap` returns `[]error` with the underlying error and the cause, so `errors.Is` and `errors.As` see both, and `errors.Unwrap` returns nil for an `*Error` (**breaking**)
+- `Error.Is` matches a target `*Error` by its underlying error instead of by message and fields, so copies made by `With*` match the error they came from (**breaking**)
+- `Error.WithCause` joins a new cause with the attached ones into one flat `MultiError` instead of replacing them (**breaking**)
+- `Error.WithField`, `WithFields` and `WithCause` panic on a nil receiver instead of returning nil (**breaking**)
+- `Error.Format` prints for `%+v` the underlying error, the fields, the stack trace and then every cause, all with `%+v` and indented one tab
+- `Error.Format` honors width, precision and flags for `%s`, `%v` and `%q`
 - `Error.StackTrace` returns a copy
-- `MultiError.Error` joins the messages by newlines like `errors.Join`, without the `N errors occurred:` header (**breaking**)
+- `Wrap` and `Newf` reuse the stack trace of the first `*Error` in the `Unwrap() error` chain instead of capturing a new one
+- `MultiError.Error` joins the messages by newlines like `errors.Join`, without the `N errors occurred:` header, and returns `<nil>` for a nil receiver (**breaking**)
+- `MultiError.Unwrap` returns a copy
 - `MultiError.GoString` prints a keyed Go literal like `Error.GoString`
-- Nil receivers: `Error.WithField`, `Error.WithFields`, `Error.WithCause` and `MultiError.Add` panic instead of returning nil or doing nothing, and `MultiError.Error` returns `<nil>` instead of an empty string, as `Error.Error` does (**breaking**)
 
 ### Removed
-- `MultiError.Errors`, use `MultiError.Unwrap` instead (**breaking**)
+- `MultiError.Errors`, use `MultiError.Unwrap`, which now returns a copy (**breaking**)
+
+### Fixed
+- `Error.Frames` doc said outermost call first; frames are innermost first
 
 
 ## [v1.3.0](https://github.com/gravitton/errors/compare/v1.2.1...v1.3.0) (2026-08-26)

@@ -207,19 +207,24 @@ func TestMultiError_Unwrap(t *testing.T) {
 		assert.ErrorIs(t, errs, err1)
 		assert.ErrorIs(t, errs, err2)
 	})
-	t.Run("appending does not change the collection", func(t *testing.T) {
+	t.Run("returns a copy", func(t *testing.T) {
 		errs := NewMulti()
-		errs.Add(io.EOF)
-		errs.Add(io.ErrUnexpectedEOF)
-		errs.Add(io.ErrShortWrite)
+		errs.Add(io.EOF, io.ErrUnexpectedEOF)
 
 		unwrapped := errs.Unwrap()
+		unwrapped[0] = io.ErrNoProgress
 		errs.Add(io.ErrClosedPipe)
-		_ = append(unwrapped, io.ErrNoProgress)
 
-		assert.Length(t, unwrapped, 3)
-		assert.Equal(t, errs.Unwrap(), []error{io.EOF, io.ErrUnexpectedEOF, io.ErrShortWrite, io.ErrClosedPipe})
+		assert.Equal(t, unwrapped, []error{io.ErrNoProgress, io.ErrUnexpectedEOF})
+		assert.Equal(t, errs.Unwrap(), []error{io.EOF, io.ErrUnexpectedEOF, io.ErrClosedPipe})
 	})
+}
+
+func TestMultiError_Len(t *testing.T) {
+	errs := NewMulti()
+	errs.Add(io.EOF, nil, io.ErrClosedPipe)
+
+	assert.Equal(t, errs.Len(), 2)
 }
 
 func TestMultiError_ErrorOrNil(t *testing.T) {
@@ -242,7 +247,9 @@ func TestMultiError_Format(t *testing.T) {
 		assert.Equal(t, fmt.Sprintf("[%5s]", Join(io.EOF)), "[  EOF]")
 	})
 	t.Run("details of members joined by newlines", func(t *testing.T) {
-		err1 := New("foo").WithField("k", 1).WithCause(io.EOF)
+		err1 := func() *Error {
+			return New("foo").WithField("k", 1).WithCause(io.EOF)
+		}()
 		errs := Join(err1, errors.New("a\nb"))
 
 		assert.Equal(t, fmt.Sprintf("%+v", errs), "foo\n\tk=1"+stackAt(err1, 1)+"\n\tcaused by: EOF\na\nb")

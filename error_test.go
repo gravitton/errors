@@ -393,7 +393,9 @@ func TestError_Format(t *testing.T) {
 		assert.Equal(t, fmt.Sprintf("%+v", err), "test\n\ta=1\n\tb=2"+stackAt(err, 1)+"\n\tcaused by: EOF")
 	})
 	t.Run("details of nested causes", func(t *testing.T) {
-		cause := New("a").WithCause(io.EOF)
+		cause := func() *Error {
+			return New("a").WithCause(io.EOF)
+		}()
 		err := New("root").WithCause(cause)
 
 		assert.Equal(t, fmt.Sprintf("%+v", err), "root"+stackAt(err, 1)+"\n\tcaused by: a"+stackAt(cause, 2)+"\n\t\tcaused by: EOF")
@@ -406,7 +408,9 @@ func TestError_Format(t *testing.T) {
 		assert.Equal(t, fmt.Sprintf("%+v", collection), "root"+stackAt(collection, 1)+"\n\tcaused by: EOF\n\tcaused by: io: read/write on closed pipe")
 	})
 	t.Run("details of an error wrapped with %w leave out its fields and cause", func(t *testing.T) {
-		inner := New("inner").WithField("a", 1).WithCause(io.EOF)
+		inner := func() *Error {
+			return New("inner").WithField("a", 1).WithCause(io.EOF)
+		}()
 
 		assert.Equal(t, fmt.Sprintf("%+v", Newf("outer: %w", inner)), "outer: inner"+stackAt(inner, 1))
 	})
@@ -416,7 +420,9 @@ func TestError_Format(t *testing.T) {
 		assert.Equal(t, fmt.Sprintf("%+v", err), "detailed with details"+stackAt(err, 1))
 	})
 	t.Run("details of an underlying collection", func(t *testing.T) {
-		member := New("a").WithField("x", 1)
+		member := func() *Error {
+			return New("a").WithField("x", 1)
+		}()
 		err := Wrap(Join(member, io.EOF)).WithField("k", 2)
 
 		assert.Equal(t, fmt.Sprintf("%+v", err), "a\n\tx=1"+stackAt(member, 1)+"\nEOF\n\tk=2"+stackAt(err, 1))
