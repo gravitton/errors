@@ -8,28 +8,25 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased](https://github.com/gravitton/errors/compare/v1.3.0...main)
 ### Added
-- `Sentinel` creates an `*Error` without a stack trace, meant for package-level errors
+- `Sentinel` creates a plain error without a stack trace, for package-level errors
 - `ErrUnsupported` re-exported from the standard library
-- `Error.GoString` and `MultiError.GoString` print the error and every contained error in Go syntax, used by `%#v`
-- `MultiError.Format` implements `fmt.Formatter`: `%+v` prints every collected error with `%+v`
-- Runnable examples of the error messages, fields, causes and collections
+- `Error.GoString`, used by `%#v`: a keyed Go literal of the fields that are set, without the stack trace
+- `Error.LogValue` and `MultiError.LogValue` implement `slog.LogValuer`: an `*Error` is logged as a group of its message, fields and cause, without the stack trace, and a `MultiError` as a group of its members keyed by their index
+- `MultiError.Format` implements `fmt.Formatter`: `%+v` joins the members formatted with `%+v` by newlines
+- Examples of creating, wrapping, fields, causes, collections and their `%+v`, `%#v` and `slog` output
 
 ### Changed
-- `Wrap`, `Newf`, `Error.Fields` and `%+v` look through single-error wrappers for inner `*Error` values: the first stack trace found is reused, fields are merged with the outermost value winning, and every cause is printed
-- `Wrap`, `Error.WithField`, `Error.WithFields` and `Error.WithCause` give a stackless `*Error` the current stack trace
-- `Error.WithCause` appends to the causes instead of replacing the cause (**breaking**)
-- `Error.Unwrap` returns `[]error` holding the underlying error and the causes, so `errors.Unwrap` returns nil for an `*Error` (**breaking**)
-- `Error.Is` matches when the target's underlying error is in the chain of the underlying error, instead of comparing the message and fields, so fields no longer scope a match and two `New` calls with the same text no longer match (**breaking**)
-- `Error.Format` honors width, precision and flags for `%s`, `%q`, `%v` and `%x`, and `%+v` prints the underlying error with `%+v`, so a wrapped `MultiError` shows its members' details, and the causes with `%+v` after the stack trace
-- Multi-line output follows one layout: every line is indented one tab deeper than the line it belongs to, including causes, multi-line messages and field values; empty lines stay empty
+- `Wrap` and `Newf` reuse the stack trace of the first `*Error` in the wrapped error's tree instead of capturing a new one
+- `Error.Unwrap` returns `[]error` holding the underlying error and the cause, so both are visible to `errors.Is` and `errors.As`, and `errors.Unwrap` returns nil for an `*Error` (**breaking**)
+- `Error.WithCause` joins another cause with the one already attached instead of replacing it (**breaking**)
+- `Error.Format` honors width, precision and flags for every verb, and `%+v` prints the underlying error with `%+v`, then the fields, the stack trace and the cause formatted with `%+v`, each indented one tab
 - `Error.StackTrace` returns a copy
-- `Error.Unwrap` and `MultiError.Unwrap` return their internal slice clipped instead of allocating, so `errors.Is` and `errors.As` don't allocate on them
-- A captured stack trace keeps only its frames instead of a 32-frame buffer
-- `MultiError.Error` numbers the messages and reports `no errors` for an empty collection (**breaking**)
-- Methods of `Error` and `MultiError` no longer handle nil receivers (**breaking**)
+- `MultiError.Error` joins the messages by newlines like `errors.Join`, without the `N errors occurred:` header (**breaking**)
+- `MultiError.GoString` prints a keyed Go literal like `Error.GoString`
+- Nil receivers: `Error.WithField`, `Error.WithFields`, `Error.WithCause` and `MultiError.Add` panic instead of returning nil or doing nothing, and `Error` returns `<nil>` instead of an empty string, as it does for the zero value (**breaking**)
 
 ### Removed
-- `Error.Frames`, resolve `Error.StackTrace` with `runtime.CallersFrames` instead (**breaking**)
+- `Error.Is`, errors are matched by identity through `errors.Is` instead of by message and fields (**breaking**)
 - `MultiError.Errors`, use `MultiError.Unwrap` instead (**breaking**)
 
 
