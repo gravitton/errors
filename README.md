@@ -117,11 +117,10 @@ if err := write(f); err != nil {
 }
 ```
 
-Attach a collection through `ErrorOrNil()`, not the collection itself: an empty `MultiError` is still an error, and
-becomes a cause that prints and logs nothing.
+An empty collection attaches nothing, so a collection can be attached as it is:
 
 ```go
-return errors.New("could not process batch").WithCause(errs.ErrorOrNil())
+return errors.New("could not process batch").WithCause(errs)
 ```
 
 ### Wrapping

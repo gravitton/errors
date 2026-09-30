@@ -223,6 +223,15 @@ func TestWrap(t *testing.T) {
 		assert.Equal(t, raisedIn(Wrap(fmt.Errorf("outer: %w", err))), here())
 		assert.Equal(t, raisedIn(Newf("outer: %w", err)), here())
 	})
+	t.Run("a struct literal in the chain keeps no stack", func(t *testing.T) {
+		assert.Empty(t, Wrap(fmt.Errorf("outer: %w", &Error{})).StackTrace())
+	})
+}
+
+func TestError_Error(t *testing.T) {
+	err := Wrap(fmt.Errorf("outer: %w", io.EOF)).WithField("a", 1).WithCause(io.ErrClosedPipe)
+
+	assert.Equal(t, err.Error(), "outer: EOF")
 }
 
 func TestError_Unwrap(t *testing.T) {
@@ -252,9 +261,10 @@ func TestError_Is(t *testing.T) {
 
 		assert.NotErrorIs(t, New("test"), target)
 	})
-	t.Run("target without an underlying error matches nothing", func(t *testing.T) {
+	t.Run("target without an underlying error matches only itself", func(t *testing.T) {
 		var target Error
 
+		assert.ErrorIs(t, &target, &target)
 		assert.NotErrorIs(t, target.WithField("a", 1), &target)
 		assert.NotErrorIs(t, New("test"), &target)
 	})
@@ -314,11 +324,13 @@ func TestError_WithCause(t *testing.T) {
 		assert.Equal(t, err.StackTrace(), original.StackTrace())
 		assert.Length(t, original.Unwrap(), 1)
 	})
-	t.Run("nil returns the error", func(t *testing.T) {
+	t.Run("nil or an empty collection returns the error", func(t *testing.T) {
 		err := New("test")
 		var missing *Error
 
 		assert.Same(t, err.WithCause(nil), err)
+		assert.Same(t, err.WithCause(NewMulti()), err)
+		assert.Same(t, err.WithCause(io.EOF).WithCause(NewMulti()).Unwrap()[1], io.EOF)
 		assert.True(t, missing.WithCause(nil) == nil)
 	})
 	t.Run("a second cause is joined", func(t *testing.T) {
@@ -333,6 +345,11 @@ func TestError_WithCause(t *testing.T) {
 		err := New("test").WithCause(io.EOF).WithCause(io.ErrClosedPipe).WithCause(Join(io.ErrShortWrite, io.ErrNoProgress))
 
 		assert.Equal(t, err.Unwrap()[1].(*MultiError).Unwrap(), []error{io.EOF, io.ErrClosedPipe, io.ErrShortWrite, io.ErrNoProgress})
+	})
+	t.Run("a collection as the first cause is flattened by the next", func(t *testing.T) {
+		err := New("test").WithCause(Join(io.EOF, io.ErrClosedPipe)).WithCause(io.ErrShortWrite)
+
+		assert.Equal(t, err.Unwrap()[1].(*MultiError).Unwrap(), []error{io.EOF, io.ErrClosedPipe, io.ErrShortWrite})
 	})
 	t.Run("derived errors do not share causes", func(t *testing.T) {
 		base := New("test").WithCause(io.EOF)
@@ -457,5 +474,10 @@ func TestError_LogValue(t *testing.T) {
 	})
 	t.Run("cause as a nested group", func(t *testing.T) {
 		assert.Equal(t, logged(New("test").WithCause(New("inner").WithField("a", 1))), "err.msg=test err.cause.msg=inner err.cause.fields.a=1")
+	})
+	t.Run("joined causes keyed by index", func(t *testing.T) {
+		err := New("test").WithCause(io.EOF).WithCause(New("inner").WithField("a", 1))
+
+		assert.Equal(t, logged(err), "err.msg=test err.cause.0=EOF err.cause.1.msg=inner err.cause.1.fields.a=1")
 	})
 }

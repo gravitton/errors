@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - `Error.Unwrap` returns `[]error` with the underlying error and the cause, so `errors.Is` and `errors.As` see both, and `errors.Unwrap` returns nil for an `*Error` (**breaking**)
 - `Error.Is` matches a target `*Error` by its underlying error instead of by message and fields, so copies made by `With*` match the error they came from (**breaking**)
 - `Error.WithCause` joins a new cause with the attached ones into one flat `MultiError` instead of replacing them (**breaking**)
+- `Error.WithCause` returns the error unchanged for an empty `MultiError`, as it does for `nil`
 - `Error.WithField`, `WithFields` and `WithCause` panic on a nil receiver instead of returning nil (**breaking**)
 - `Error.Format` prints for `%+v` the underlying error, the fields, the stack trace and then every cause, all with `%+v` and indented one tab
 - `Error.Format` honors width, precision and flags for `%s`, `%v` and `%q`
