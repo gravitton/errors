@@ -38,8 +38,9 @@ func Newf(format string, args ...any) *Error {
 	return wrap(fmt.Errorf(format, args...))
 }
 
-// Wrap converts err into an Error with the stack trace of the first Error in its Unwrap chain,
-// which is closer to where the error was raised, or else the current one. A nil err returns nil.
+// Wrap returns err unchanged if it is an Error, or else converts it into one with the stack trace of
+// the first Error in its Unwrap chain, which is closer to where the error was raised, or else the
+// current one. A nil err returns nil.
 func Wrap(err error) *Error {
 	if err == nil {
 		return nil
@@ -84,7 +85,7 @@ func (e *Error) Unwrap() []error {
 // made by the With methods match the error they came from.
 func (e *Error) Is(target error) bool {
 	other, ok := target.(*Error)
-	if !ok || e == nil || other == nil {
+	if !ok || e == nil || other == nil || other.err == nil {
 		return false
 	}
 
@@ -235,8 +236,8 @@ func (e *Error) details() string {
 		lines = append(lines, indent(fmt.Sprintf("%s\n\t%s:%d", frame.Function, frame.File, frame.Line)))
 	}
 
-	if e.cause != nil {
-		lines = append(lines, indent(fmt.Sprintf("caused by: %+v", e.cause)))
+	for _, cause := range members(e.cause) {
+		lines = append(lines, indent(fmt.Sprintf("caused by: %+v", cause)))
 	}
 
 	return strings.Join(lines, "\n")
@@ -253,11 +254,14 @@ func stackOf(err error) []uintptr {
 }
 
 func members(err error) []error {
-	if joined, ok := err.(*MultiError); ok {
-		return joined.Unwrap()
+	switch err := err.(type) {
+	case nil:
+		return nil
+	case *MultiError:
+		return err.Unwrap()
+	default:
+		return []error{err}
 	}
-
-	return []error{err}
 }
 
 func indent(text string) string {

@@ -16,6 +16,8 @@ var errSentinel = Sentinel("sentinel")
 
 var errInit = New("init")
 
+var initFunction = here()
+
 type fsError struct{}
 
 func (e *fsError) Error() string {
@@ -136,9 +138,9 @@ func TestNew(t *testing.T) {
 		assert.NotErrorIs(t, New("test"), New("test"))
 	})
 	t.Run("at package level keeps the init stack", func(t *testing.T) {
-		assert.Equal(t, raisedIn(errInit), "github.com/gravitton/errors.init")
-		assert.Equal(t, raisedIn(errInit.WithField("a", 1)), "github.com/gravitton/errors.init")
-		assert.Equal(t, raisedIn(Wrap(errInit)), "github.com/gravitton/errors.init")
+		assert.Equal(t, raisedIn(errInit), initFunction)
+		assert.Equal(t, raisedIn(errInit.WithField("a", 1)), initFunction)
+		assert.Equal(t, raisedIn(Wrap(errInit)), initFunction)
 	})
 }
 
@@ -250,6 +252,12 @@ func TestError_Is(t *testing.T) {
 
 		assert.NotErrorIs(t, New("test"), target)
 	})
+	t.Run("target without an underlying error matches nothing", func(t *testing.T) {
+		var target Error
+
+		assert.NotErrorIs(t, target.WithField("a", 1), &target)
+		assert.NotErrorIs(t, New("test"), &target)
+	})
 }
 
 func TestError_Fields(t *testing.T) {
@@ -308,8 +316,10 @@ func TestError_WithCause(t *testing.T) {
 	})
 	t.Run("nil returns the error", func(t *testing.T) {
 		err := New("test")
+		var missing *Error
 
 		assert.Same(t, err.WithCause(nil), err)
+		assert.True(t, missing.WithCause(nil) == nil)
 	})
 	t.Run("a second cause is joined", func(t *testing.T) {
 		err := New("test").WithCause(io.EOF).WithCause(io.ErrClosedPipe)
@@ -388,10 +398,12 @@ func TestError_Format(t *testing.T) {
 
 		assert.Equal(t, fmt.Sprintf("%+v", err), "root"+stackAt(err, 1)+"\n\tcaused by: a"+stackAt(cause, 2)+"\n\t\tcaused by: EOF")
 	})
-	t.Run("details of joined causes", func(t *testing.T) {
-		err := New("root").WithCause(io.EOF).WithCause(io.ErrClosedPipe)
+	t.Run("details of every joined cause", func(t *testing.T) {
+		joined := New("root").WithCause(io.EOF).WithCause(io.ErrClosedPipe)
+		collection := New("root").WithCause(Join(io.EOF, io.ErrClosedPipe))
 
-		assert.Equal(t, fmt.Sprintf("%+v", err), "root"+stackAt(err, 1)+"\n\tcaused by: EOF\n\tio: read/write on closed pipe")
+		assert.Equal(t, fmt.Sprintf("%+v", joined), "root"+stackAt(joined, 1)+"\n\tcaused by: EOF\n\tcaused by: io: read/write on closed pipe")
+		assert.Equal(t, fmt.Sprintf("%+v", collection), "root"+stackAt(collection, 1)+"\n\tcaused by: EOF\n\tcaused by: io: read/write on closed pipe")
 	})
 	t.Run("details of an error wrapped with %w leave out its fields and cause", func(t *testing.T) {
 		inner := New("inner").WithField("a", 1).WithCause(io.EOF)

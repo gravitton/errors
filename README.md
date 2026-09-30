@@ -87,6 +87,15 @@ err := errors.New("timeout")
 errors.Is(err.WithField("attempt", 3), err) // true
 ```
 
+Match a sentinel by the sentinel itself, not by a `Wrap` of it: an `*Error` target is only matched by an `*Error` in
+the tree, never by a plain wrapper or a plain cause around the sentinel.
+
+```go
+err := fmt.Errorf("load: %w", ErrNotFound)
+errors.Is(err, ErrNotFound)              // true
+errors.Is(err, errors.Wrap(ErrNotFound)) // false
+```
+
 ### Cause
 
 The error that caused this one, or one that happened while handling it. Another cause is joined with the ones already

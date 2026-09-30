@@ -18,13 +18,13 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Changed
 - `Wrap` and `Newf` reuse the stack trace of the first `*Error` in the wrapped error's `Unwrap() error` chain instead of capturing a new one
 - `Error.Unwrap` returns `[]error` holding the underlying error and the cause, so both are visible to `errors.Is` and `errors.As`, and `errors.Unwrap` returns nil for an `*Error` (**breaking**)
-- `Error.Is` matches a target `*Error` by its underlying error instead of by message and fields, so copies made by `With*` match the error they came from (**breaking**)
+- `Error.Is` matches a target `*Error` by its underlying error instead of by message and fields, so copies made by `With*` match the error they came from, and a target without an underlying error, such as the zero value, matches nothing (**breaking**)
 - `Error.WithCause` joins another cause with the ones already attached into one flat `MultiError` instead of replacing it (**breaking**)
-- `Error.Format` honors width, precision and flags for every verb, and `%+v` prints the underlying error with `%+v`, then the fields, the stack trace and the cause formatted with `%+v`, each indented one tab
+- `Error.Format` honors width, precision and flags for `%s`, `%v` and `%q`, and `%+v` prints the underlying error with `%+v`, then the fields, the stack trace and every cause, each member of a joined cause on its own `caused by:` line, formatted with `%+v`, each indented one tab
 - `Error.StackTrace` returns a copy
 - `MultiError.Error` joins the messages by newlines like `errors.Join`, without the `N errors occurred:` header (**breaking**)
 - `MultiError.GoString` prints a keyed Go literal like `Error.GoString`
-- Nil receivers: `Error.WithField`, `Error.WithFields`, `Error.WithCause` and `MultiError.Add` panic instead of returning nil or doing nothing, and `Error` returns `<nil>` instead of an empty string, as it does for the zero value (**breaking**)
+- Nil receivers: `Error.WithField`, `Error.WithFields`, `Error.WithCause` and `MultiError.Add` panic instead of returning nil or doing nothing, and `MultiError.Error` returns `<nil>` instead of an empty string, as `Error.Error` does (**breaking**)
 
 ### Removed
 - `MultiError.Errors`, use `MultiError.Unwrap` instead (**breaking**)
