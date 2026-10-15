@@ -14,8 +14,8 @@ import (
 
 const maxFrames = 32
 
-// Error is an immutable error with key-value fields, an optional cause, and a stack trace.
-// The zero value has no underlying error and its message is <nil>.
+// Error is an error with key-value fields, an optional cause and a stack trace. The zero value
+// has no underlying error, cause or stack trace, and its message is <nil>.
 type Error struct {
 	err    error
 	cause  error
@@ -23,24 +23,25 @@ type Error struct {
 	stack  []uintptr
 }
 
-// New creates an Error with the given text and the current stack trace.
+// New returns an Error with the given text and the current stack trace.
 func New(text string) *Error {
 	return wrap(errors.New(text))
 }
 
-// Sentinel creates a plain error without a stack trace, meant for package-level errors.
+// Sentinel returns a plain error without a stack trace, for package-level variables. Wrap
+// derives an Error from it.
 func Sentinel(text string) error {
 	return errors.New(text)
 }
 
-// Newf formats an error with fmt.Errorf and wraps it like Wrap does.
+// Newf returns Wrap(fmt.Errorf(format, args...)).
 func Newf(format string, args ...any) *Error {
 	return wrap(fmt.Errorf(format, args...))
 }
 
-// Wrap returns err unchanged if it is an Error, or else converts it into one with the stack trace of
-// the first Error in its Unwrap chain, which is closer to where the error was raised, or else the
-// current one. A nil err, Error or MultiError returns nil.
+// Wrap returns err itself if it is an Error, else a new Error around it with the stack trace of
+// the first Error in its Unwrap() error chain, or the current one if there is none. A nil err
+// returns nil.
 func Wrap(err error) *Error {
 	if !exists(err) {
 		return nil
@@ -81,8 +82,8 @@ func (e *Error) Unwrap() []error {
 	return []error{e.err, e.cause}
 }
 
-// Is reports whether target is an Error whose underlying error this one matches, through its
-// own underlying error or its cause, so copies made by the With methods match the error they came from.
+// Is reports whether target is an Error whose underlying error errors.Is finds in the error's
+// underlying error or cause. A target without an underlying error matches only itself.
 func (e *Error) Is(target error) bool {
 	other, ok := target.(*Error)
 	if !ok || other == nil || other.err == nil {
@@ -92,7 +93,7 @@ func (e *Error) Is(target error) bool {
 	return errors.Is(e, other.err)
 }
 
-// Fields returns a copy of the fields.
+// Fields returns the error's own fields, not those of its underlying error or cause.
 func (e *Error) Fields() map[string]any {
 	if e == nil {
 		return nil
@@ -101,12 +102,14 @@ func (e *Error) Fields() map[string]any {
 	return maps.Clone(e.fields)
 }
 
-// WithField returns a copy of the error with the field added. It panics on a nil error.
+// WithField returns the error with the field added, replacing one with the same key. It panics
+// for a nil receiver.
 func (e *Error) WithField(key string, value any) *Error {
 	return e.WithFields(map[string]any{key: value})
 }
 
-// WithFields returns a copy of the error with the fields added. It panics on a nil error.
+// WithFields returns the error with the fields added, replacing those with the same keys. It
+// panics for a nil receiver.
 func (e *Error) WithFields(fields map[string]any) *Error {
 	derived := *e
 	derived.fields = make(map[string]any, len(e.fields)+len(fields))
@@ -116,9 +119,9 @@ func (e *Error) WithFields(fields map[string]any) *Error {
 	return &derived
 }
 
-// WithCause returns a copy of the error with the cause attached, joined with the causes
-// it already has into one flat collection. A nil or empty cause attaches nothing.
-// It panics on a nil error.
+// WithCause returns the error with the cause attached. A second cause is joined with those
+// attached into one flat MultiError; a nil cause or an empty collection attaches nothing. It
+// panics for a nil receiver.
 func (e *Error) WithCause(cause error) *Error {
 	causes := slices.Concat(members(e.cause), members(cause))
 
@@ -136,8 +139,7 @@ func (e *Error) WithCause(cause error) *Error {
 	return &derived
 }
 
-// StackTrace returns a copy of the program counters captured for the error,
-// innermost call first.
+// StackTrace returns the program counters of the stack trace, innermost call first.
 func (e *Error) StackTrace() []uintptr {
 	if e == nil {
 		return nil
@@ -146,7 +148,7 @@ func (e *Error) StackTrace() []uintptr {
 	return slices.Clone(e.stack)
 }
 
-// Frames resolves the stack trace into call frames, innermost call first.
+// Frames returns the call frames of the stack trace, innermost call first.
 func (e *Error) Frames() iter.Seq[runtime.Frame] {
 	return func(yield func(runtime.Frame) bool) {
 		if e == nil || len(e.stack) == 0 {
@@ -163,8 +165,8 @@ func (e *Error) Frames() iter.Seq[runtime.Frame] {
 	}
 }
 
-// Format prints the message for %s, %v and %q, the underlying error with fields,
-// stack trace and cause for %+v, and Go syntax for %#v.
+// Format prints the message for %s, %v and %q, the underlying error, the fields sorted by key,
+// the stack trace and every cause for %+v, and Go syntax for %#v.
 func (e *Error) Format(s fmt.State, verb rune) {
 	switch {
 	case verb == 'v' && s.Flag('#'):
@@ -176,7 +178,7 @@ func (e *Error) Format(s fmt.State, verb rune) {
 	}
 }
 
-// GoString returns the error in Go syntax.
+// GoString returns the error in Go syntax, without the stack trace.
 func (e *Error) GoString() string {
 	if e == nil {
 		return "(*errors.Error)(nil)"
@@ -199,8 +201,8 @@ func (e *Error) GoString() string {
 	return "&errors.Error{" + strings.Join(items, ", ") + "}"
 }
 
-// LogValue returns the message, a group of the fields and the cause as a slog group,
-// without the stack trace.
+// LogValue returns the error as a slog group of msg, a group of the fields sorted by key, and
+// cause if there is one, without the stack trace.
 func (e *Error) LogValue() slog.Value {
 	if e == nil {
 		return slog.AnyValue(nil)

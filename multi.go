@@ -10,8 +10,8 @@ import (
 	"sync"
 )
 
-// MultiError collects errors into a single error. It is safe for concurrent use.
-// The zero value is an empty collection.
+// MultiError is an error made of a collection of errors. It is safe for concurrent use, and the
+// zero value is an empty collection.
 type MultiError struct {
 	errs  []error
 	mutex sync.Mutex
@@ -22,7 +22,7 @@ func NewMulti() *MultiError {
 	return &MultiError{}
 }
 
-// Join returns a MultiError with the given errors, or nil when Add skips all of them.
+// Join returns a MultiError of the non-nil errors, or nil if there are none.
 func Join(errs ...error) error {
 	m := NewMulti()
 	m.Add(errs...)
@@ -30,8 +30,7 @@ func Join(errs ...error) error {
 	return m.ErrorOrNil()
 }
 
-// Add adds the errors to the collection, skipping nils, nil Errors and nil MultiErrors.
-// It panics on a nil collection.
+// Add appends the non-nil errors to the collection. It panics for a nil receiver.
 func (e *MultiError) Add(errs ...error) {
 	e.mutex.Lock()
 	defer e.mutex.Unlock()
@@ -43,14 +42,14 @@ func (e *MultiError) Add(errs ...error) {
 	}
 }
 
-// Error returns the messages of the collected errors joined by newlines.
+// Error returns the messages of the members joined by newlines.
 func (e *MultiError) Error() string {
 	return e.join(func(err error) string {
 		return err.Error()
 	})
 }
 
-// Unwrap returns a copy of the errors collected so far.
+// Unwrap returns the members.
 func (e *MultiError) Unwrap() []error {
 	if e == nil {
 		return nil
@@ -62,7 +61,7 @@ func (e *MultiError) Unwrap() []error {
 	return slices.Clone(e.errs)
 }
 
-// Len returns the number of collected errors.
+// Len returns the number of members.
 func (e *MultiError) Len() int {
 	if e == nil {
 		return 0
@@ -74,8 +73,8 @@ func (e *MultiError) Len() int {
 	return len(e.errs)
 }
 
-// ErrorOrNil returns nil when no errors were collected, otherwise the collection
-// itself, which reflects errors added later.
+// ErrorOrNil returns nil for an empty collection, otherwise the collection itself, not a
+// snapshot.
 func (e *MultiError) ErrorOrNil() error {
 	if e.Len() == 0 {
 		return nil
@@ -84,8 +83,8 @@ func (e *MultiError) ErrorOrNil() error {
 	return e
 }
 
-// Format prints the message for %s, %v and %q, every error with %+v for %+v, and Go
-// syntax for %#v.
+// Format prints the message for %s, %v and %q, the members formatted with %+v and joined by
+// newlines for %+v, and Go syntax for %#v.
 func (e *MultiError) Format(s fmt.State, verb rune) {
 	switch {
 	case verb == 'v' && s.Flag('#'):
@@ -116,7 +115,7 @@ func (e *MultiError) GoString() string {
 	return "&errors.MultiError{errs:[]error{" + strings.Join(items, ", ") + "}}"
 }
 
-// LogValue returns the collected errors as a slog group keyed by their index.
+// LogValue returns the members as a slog group keyed by their index from 0.
 func (e *MultiError) LogValue() slog.Value {
 	if e == nil {
 		return slog.AnyValue(nil)

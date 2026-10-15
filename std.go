@@ -4,26 +4,25 @@ import (
 	"errors"
 )
 
-// ErrUnsupported is re-exported from the standard library so that callers can
-// swap the import without losing it.
+// ErrUnsupported is errors.ErrUnsupported.
 var ErrUnsupported = errors.ErrUnsupported
 
-// Unwrap delegates to errors.Unwrap.
+// Unwrap calls errors.Unwrap, which returns nil for every Error: it follows only Unwrap() error.
 func Unwrap(err error) error {
 	return errors.Unwrap(err)
 }
 
-// Is delegates to errors.Is.
+// Is calls errors.Is.
 func Is(err, target error) bool {
 	return errors.Is(err, target)
 }
 
-// As delegates to errors.As.
+// As calls errors.As.
 func As(err error, target any) bool {
 	return errors.As(err, target)
 }
 
-// AsType delegates to errors.AsType.
+// AsType calls errors.AsType.
 func AsType[E error](err error) (E, bool) {
 	return errors.AsType[E](err)
 }
