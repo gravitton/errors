@@ -23,14 +23,13 @@ Structured errors with fields, causes, and stack traces, plus a concurrent-safe 
 
 ## Features
 
-- **Drop-in replacement** for the standard `errors` package – swap the import, keep `New`, `Is`, `As` and `AsType`.
-- **Stack traces** captured where the error is raised and printed with `%+v`.
+- **Drop-in** – swap the `errors` import; `New`, `Is`, `As` and `AsType` keep working.
+- **Stack traces** – captured where the error is raised, printed with `%+v`.
 - **Fields** – key-value context attached to an error.
 - **Cause** – the error that caused this one, visible to `Is` and `As`.
-- **Identity** – every copy made by `With*` is still the error it came from for `errors.Is`.
-- **Immutable** – every `With*` method returns a new error.
-- **Structured logging** – errors are logged by `slog` as groups of their message, fields and cause.
-- **Multi error** – concurrent-safe collection of errors as a single `error`, with `Join` on top.
+- **Immutable** – `With*` returns a copy that still matches the original with `Is`.
+- **Structured logging** – logged by `slog` as a group of message, fields and cause.
+- **Multi error** – concurrent-safe collection of errors, with `Join` on top.
 
 ## Installation
 
