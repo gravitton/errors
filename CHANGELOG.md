@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 
 ## [Unreleased](https://github.com/gravitton/errors/compare/v1.4.0...main)
+### Changed
+- Require `assert` v1.7.0 for the tests
+- CI runs the shared workflow of `gravitton/.github`, adding arm64 and the fused multiply-add check
 
 
 ## [v1.4.0](https://github.com/gravitton/errors/compare/v1.3.0...v1.4.0) (2026-09-30)
