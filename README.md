@@ -137,7 +137,9 @@ return errors.New("could not process batch").WithCause(errs)
 
 Wrapping an `*Error`, with `Wrap` or with `Newf` and `%w`, reuses its stack trace, which is closer to where the error
 was raised. Only the `Unwrap() error` chain is searched: a collection, such as `Join`, gets the current stack trace.
-The fields and cause of the wrapped error stay on it, reachable with `errors.As`:
+The fields and cause of the wrapped error stay on it. `errors.As` on the wrapper finds the wrapper itself, so the
+wrapped error is reached through the underlying error, or by a walk of `Unwrap() []error` collecting the fields of
+every `*Error` in the tree:
 
 ```go
 outer := errors.Newf("load user: %w", err)
@@ -145,6 +147,8 @@ outer := errors.Newf("load user: %w", err)
 outer.StackTrace()            // the stack trace of err
 outer.Fields()                // map[]
 errors.Is(outer, ErrNotFound) // true
+
+inner, _ := errors.AsType[*errors.Error](outer.Unwrap()[0]) // err, with its fields
 ```
 
 ### Collecting
@@ -209,8 +213,9 @@ fmt.Printf("%+v", err)
 ```
 
 `%+v` applies to the underlying error and to every cause, so their details are printed too. An `*Error` wrapped with
-`%w` is the exception: `fmt` prints only the wrapper's message, so its fields and cause are left out, reachable with
-`errors.As`. A `MultiError` joins its members with newlines, as `errors.Join` does, with `%+v` applied to every member.
+`%w` is the exception: `fmt` prints only the wrapper's message, so its fields and cause are left out; they stay on
+it, reached as under Wrapping. A `MultiError` joins its members with newlines, as `errors.Join` does, with `%+v`
+applied to every member.
 Wrapping a `MultiError` in an `*Error` prints its members first, so the fields and stack trace of the `*Error` follow
 the last member at the same indentation.
 
