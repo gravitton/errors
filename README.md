@@ -15,12 +15,11 @@
 [![Go Version][ico-go-version]][link-go]
 [![Software License][ico-license]][link-licence]
 
-Structured errors with fields, causes, and stack traces, plus a concurrent-safe multi error
+Structured errors with fields, causes and stack traces, and a concurrent-safe multi error
 
 <hr>
 
 </div>
-
 
 ## Features
 
@@ -32,13 +31,21 @@ Structured errors with fields, causes, and stack traces, plus a concurrent-safe 
 - **Structured logging** – logged by `slog` as a group of message, fields and cause.
 - **Multi error** – concurrent-safe collection of errors, with `Join` on top.
 
+The rules behind them are in the [package documentation][link-go-dev-reference].
+
 ## Installation
 
 ```shell
 go get github.com/gravitton/errors
 ```
 
+```go
+import "github.com/gravitton/errors"
+```
+
 ## Usage
+
+It replaces the standard library's `errors` import, so existing calls keep working:
 
 ```diff
 - "errors"
@@ -258,12 +265,10 @@ The MIT License (MIT). Please see [License File][link-licence] for more informat
 [ico-go-dev-reference]:     https://img.shields.io/badge/go.dev-reference-007d9c?style=flat-square
 [ico-coverage]:             https://img.shields.io/coverallsCoverage/github/gravitton/errors?style=flat-square
 
-[link-author]:              https://github.com/gravitton
 [link-release]:             https://github.com/gravitton/errors/releases
 [link-go]:                  https://go.dev/doc/devel/release
 [link-contributors]:        https://github.com/gravitton/errors/contributors
 [link-licence]:             ./LICENSE.md
-[link-changelog]:           ./CHANGELOG.md
 [link-workflow]:            https://github.com/gravitton/errors/actions
 [link-go-dev-reference]:    https://pkg.go.dev/github.com/gravitton/errors
 [link-coverage]:            https://coveralls.io/github/gravitton/errors
