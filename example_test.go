@@ -10,20 +10,6 @@ import (
 	"github.com/gravitton/errors"
 )
 
-var ErrNotFound = errors.Sentinel("not found")
-
-func newLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		ReplaceAttr: func(groups []string, attr slog.Attr) slog.Attr {
-			if len(groups) == 0 && attr.Key == slog.TimeKey {
-				return slog.Attr{}
-			}
-
-			return attr
-		},
-	}))
-}
-
 func ExampleNew() {
 	err := errors.New("boom")
 
@@ -172,3 +158,17 @@ func ExampleMultiError_LogValue() {
 	// Output:
 	// level=ERROR msg="load users" err.0.msg="connection refused" err.0.fields.port=5432 err.1=EOF
 }
+
+func newLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		ReplaceAttr: func(groups []string, attr slog.Attr) slog.Attr {
+			if len(groups) == 0 && attr.Key == slog.TimeKey {
+				return slog.Attr{}
+			}
+
+			return attr
+		},
+	}))
+}
+
+var ErrNotFound = errors.Sentinel("not found")

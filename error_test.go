@@ -12,72 +12,6 @@ import (
 	"github.com/gravitton/assert"
 )
 
-var errSentinel = Sentinel("sentinel")
-
-var errInit = New("init")
-
-var initFunction = here()
-
-type fsError struct{}
-
-func (e *fsError) Error() string {
-	return "fs"
-}
-
-type detailedError struct{}
-
-func (e *detailedError) Error() string {
-	return "detailed"
-}
-
-func (e *detailedError) Format(s fmt.State, verb rune) {
-	fmt.Fprint(s, "detailed with details")
-}
-
-func here() string {
-	pc, _, _, _ := runtime.Caller(1)
-
-	return runtime.FuncForPC(pc).Name()
-}
-
-func raisedIn(err *Error) string {
-	frame, _ := runtime.CallersFrames(err.StackTrace()).Next()
-
-	return frame.Function
-}
-
-func logged(err error) string {
-	b := &strings.Builder{}
-	handler := slog.NewTextHandler(b, &slog.HandlerOptions{
-		ReplaceAttr: func(groups []string, attr slog.Attr) slog.Attr {
-			if len(groups) == 0 && attr.Key != "err" {
-				return slog.Attr{}
-			}
-
-			return attr
-		},
-	})
-
-	slog.New(handler).Error("", "err", err)
-
-	return strings.TrimSpace(b.String())
-}
-
-func stackAt(err *Error, level int) string {
-	b := &strings.Builder{}
-	indent := strings.Repeat("\t", level)
-
-	frames := runtime.CallersFrames(err.StackTrace())
-	for {
-		frame, more := frames.Next()
-		fmt.Fprintf(b, "\n%s%s\n%s\t%s:%d", indent, frame.Function, indent, frame.File, frame.Line)
-
-		if !more {
-			return b.String()
-		}
-	}
-}
-
 func TestError(t *testing.T) {
 	t.Run("zero value is an empty error", func(t *testing.T) {
 		var err Error
@@ -519,3 +453,70 @@ func TestError_LogValue(t *testing.T) {
 		assert.Equal(t, logged(err), "err.msg=test err.cause.0=EOF err.cause.1.msg=inner err.cause.1.fields.a=1")
 	})
 }
+
+func here() string {
+	pc, _, _, _ := runtime.Caller(1)
+
+	return runtime.FuncForPC(pc).Name()
+}
+
+func raisedIn(err *Error) string {
+	frame, _ := runtime.CallersFrames(err.StackTrace()).Next()
+
+	return frame.Function
+}
+
+func logged(err error) string {
+	b := &strings.Builder{}
+	handler := slog.NewTextHandler(b, &slog.HandlerOptions{
+		ReplaceAttr: func(groups []string, attr slog.Attr) slog.Attr {
+			if len(groups) == 0 && attr.Key != "err" {
+				return slog.Attr{}
+			}
+
+			return attr
+		},
+	})
+
+	slog.New(handler).Error("", "err", err)
+
+	return strings.TrimSpace(b.String())
+}
+
+func stackAt(err *Error, level int) string {
+	b := &strings.Builder{}
+	indent := strings.Repeat("\t", level)
+
+	frames := runtime.CallersFrames(err.StackTrace())
+	for {
+		frame, more := frames.Next()
+		fmt.Fprintf(b, "\n%s%s\n%s\t%s:%d", indent, frame.Function, indent, frame.File, frame.Line)
+
+		if !more {
+			return b.String()
+		}
+	}
+}
+
+type detailedError struct{}
+
+func (e *detailedError) Error() string {
+	return "detailed"
+}
+
+func (e *detailedError) Format(s fmt.State, verb rune) {
+	fmt.Fprint(s, "detailed with details")
+}
+
+type fsError struct{}
+
+func (e *fsError) Error() string {
+	return "fs"
+}
+
+var (
+	errSentinel = Sentinel("sentinel")
+	errInit     = New("init")
+
+	initFunction = here()
+)
